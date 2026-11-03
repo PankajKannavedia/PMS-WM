@@ -333,8 +333,6 @@ function getAllDashboardData(projectName) {
   };
 
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
     // 1. BATCH FETCH for KPIs (Values only is fine for math)
     const sheetNames = [
       'Project Details Form', 'PROJECT PLANNING', 'Manpower Cost', 
@@ -342,11 +340,8 @@ function getAllDashboardData(projectName) {
       'Auditor Sheet Drawing', 'FINANCE/ACCOUNTS', 'Billing', 'WBS Sheet', 'Expenses'
     ];
 
-    const allData = {};
-    sheetNames.forEach(name => {
-      const sheet = ss.getSheetByName(name);
-      allData[name] = sheet ? sheet.getDataRange().getValues() : [];
-    });
+    // ONE Sheets API call for all tabs (instead of 11 SpreadsheetApp reads)
+    const allData = fetchSheetsBatch_(getSsId_(), sheetNames);
 
     // 2. Process Project Details
     const detailsData = allData['Project Details Form'];
@@ -375,16 +370,14 @@ function getAllDashboardData(projectName) {
           result.milestoneChart = calculateMilestoneChartInMemory(isoNo, allData['PROJECT PLANNING'], allData['Billing']);
 
           // 4. Process MOM Data (SPECIFICALLY FOR RICH TEXT/LINKS)
-          const momSheet = ss.getSheetByName('MOM');
-          if (momSheet) {
-             // We fetch this separately here because we need getRichTextValues for links
-             const momRange = momSheet.getDataRange();
-             const displayValues = momRange.getDisplayValues();
-             const richTextValues = momRange.getRichTextValues();
-             
-             const momHeaders = displayValues.shift().map(h => h.trim());
-             richTextValues.shift();
-             
+          const momGrid = fetchMomWithLinks_(getSsId_());
+          if (momGrid && momGrid.displayValues.length) {
+             const displayValues = momGrid.displayValues;
+             const linkValues = momGrid.links;
+
+             const momHeaders = displayValues.shift().map(h => String(h).trim());
+             linkValues.shift();
+
              const momIsoIndex = momHeaders.indexOf('ISO No.');
              
              // Columns that contain links
@@ -398,7 +391,7 @@ function getAllDashboardData(projectName) {
                    // Extract links
                    linkColumnIndices.forEach(colIndex => {
                      if (colIndex !== -1) {
-                       const link = richTextValues[rowIndex][colIndex].getLinkUrl();
+                       const link = linkValues[rowIndex][colIndex];
                        if (link) row[colIndex] = link;
                      }
                    });
@@ -419,6 +412,45 @@ function getAllDashboardData(projectName) {
     Logger.log("Error in getAllDashboardData: " + e.toString());
     return { error: e.toString() };
   }
+}
+
+/**
+ * Reads many tabs in ONE Sheets API (v4) call.
+ * Returns { sheetName: 2D array } shaped like getDataRange().getValues()
+ * (rows padded to equal width; missing tabs -> []). Dates come back as serial numbers.
+ */
+function fetchSheetsBatch_(ssId, sheetNames) {
+  // readTabs_ already pads rows and retries tab-by-tab if one tab is missing,
+  // so there is no need to open the spreadsheet (slow) just to list its tabs.
+  const t = readTabs_(ssId, sheetNames.map(n => ({ name: n })), { unformatted: true });
+  const out = {};
+  sheetNames.forEach(n => { out[n] = t[n] ? t[n].values : []; });
+  return out;
+}
+
+/**
+ * Reads the MOM tab (display text + hyperlinks) in one Sheets API call.
+ * Returns { displayValues: string[][], links: (string|null)[][] } or null.
+ */
+function fetchMomWithLinks_(ssId) {
+  try {
+    const t = readTabs_(ssId, [{ name: 'MOM' }], { links: true });
+    if (!t['MOM']) return null;
+    return { displayValues: t['MOM'].values, links: t['MOM'].links };
+  } catch (e) {
+    Logger.log('fetchMomWithLinks_ error: ' + e);
+    return null; // sheet missing -> no MOM data
+  }
+}
+
+/** Sheets serial date -> "dd/MM/yyyy" (null for blank/0/non-numeric). */
+function serialToDdMmYyyy_(v) {
+  if (v instanceof Date) {
+    return v.getTime() > 0 ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'dd/MM/yyyy') : null;
+  }
+  if (typeof v !== 'number' || v <= 0) return null;
+  const ms = Math.round((v - 25569) * 86400 * 1000); // days since 1899-12-30 -> epoch
+  return Utilities.formatDate(new Date(ms), 'UTC', 'dd/MM/yyyy');
 }
 
 /**
@@ -743,8 +775,9 @@ function calculateTimelineChartInMemory(isoNo, wbsData) {
       const aDate = row[actIdx];
       
       // Basic date check
-      const fPDate = (pDate instanceof Date) ? Utilities.formatDate(pDate, Session.getScriptTimeZone(), "dd/MM/yyyy") : null;
-      const fADate = (aDate instanceof Date && aDate.getTime() > 0) ? Utilities.formatDate(aDate, Session.getScriptTimeZone(), "dd/MM/yyyy") : null;
+      // Sheets API returns dates as serial numbers (UNFORMATTED_VALUE)
+      const fPDate = serialToDdMmYyyy_(pDate);
+      const fADate = serialToDdMmYyyy_(aDate);
 
       return {
         milestone: row[mileIdx],
@@ -886,15 +919,295 @@ function calculateMilestoneChartInMemory(isoNo, planningData, billingData) {
 // }
 
 /**
+ * ====================================================================
+ * SHEETS API HELPERS (shared by every dashboard data function)
+ * ====================================================================
+ */
+
+/**
+ * Spreadsheet ID without opening the (large) spreadsheet on every call.
+ * Cached per script for 6 hours; falls back to the active spreadsheet.
+ */
+function getSsId_() {
+  const cache = CacheService.getScriptCache();
+  let id = cache.get('SS_ID');
+  if (!id) {
+    id = SpreadsheetApp.getActiveSpreadsheet().getId();
+    cache.put('SS_ID', id, 21600);
+  }
+  return id;
+}
+
+/** 1 -> "A", 27 -> "AA" */
+function colLetter_(n) {
+  let s = '';
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+/** Per-execution memo of prefetched tabs (null = off). Reset on every Apps Script run. */
+var TAB_MEMO_ = null;
+function memoKey_(s, opt) {
+  return s.name + '|' + (s.startRow || 1) + '|' + (opt && opt.unformatted ? 'u' : 'f');
+}
+
+/**
+ * Prefetches the given tabs (3 Sheets API calls max) into TAB_MEMO_ so the
+ * get...Data functions of one bundle part run without touching the spreadsheet again.
+ * Each list item is {name, startRow?}.
+ */
+function prefetchTabs_(plain, withLinks, raw) {
+  const ssId = getSsId_();
+  const memo = {};
+  if (plain.length) {
+    const f = readTabs_(ssId, plain, {});
+    plain.forEach(s => { if (f[s.name]) memo[memoKey_(s, {})] = f[s.name]; });
+  }
+  if (withLinks.length) {
+    const l = readTabs_(ssId, withLinks, { links: true });
+    withLinks.forEach(s => { if (l[s.name]) memo[memoKey_(s, {})] = l[s.name]; });
+  }
+  if (raw.length) {
+    const u = readTabs_(ssId, raw, { unformatted: true });
+    raw.forEach(s => { if (u[s.name]) memo[memoKey_(s, { unformatted: true })] = u[s.name]; });
+  }
+  TAB_MEMO_ = memo;
+}
+
+/**
+ * Loads ONE part of the dashboard as JSON. The UI fires all parts in parallel, shows each
+ * section as soon as its part returns, and drives a progress bar from the finished parts.
+ *   part: 'dashboard' | 'planning' | 'wbs' | 'inventory' | 'billing' | 'other'
+ * Returns { part, data } where data = { "<functionName>|<JSON args>": result }.
+ * (For 'dashboard', data = the getAllDashboardData result.)
+ * Only the selected project's rows are returned.
+ */
+function getBundlePart(projectName, part) {
+  const t0 = Date.now();
+  const res = getBundlePartInner_(projectName, part);
+  res.ms = Date.now() - t0; // server time for this part (logged in the browser console)
+  Logger.log('getBundlePart ' + part + ' took ' + res.ms + ' ms');
+  return res;
+}
+
+function getBundlePartInner_(projectName, part) {
+  const p = projectName;
+  const D = { name: 'Project Details Form' };
+  try {
+    let calls = [];
+    if (part === 'dashboard') {
+      return { part: part, data: getAllDashboardData(projectName) };
+    } else if (part === 'planning') {
+      prefetchTabs_([D, { name: 'PROJECT PLANNING' }], [], [D, { name: 'PROJECT PLANNING' }]);
+      calls = [
+        [getProjectPlanningData, 'getProjectPlanningData', [p]],
+        [getFilteredTasks, 'getFilteredTasks', [p, 'DONE']],
+        [getFilteredTasks, 'getFilteredTasks', [p, 'IN-PROGRESS']],
+        [getFilteredTasks, 'getFilteredTasks', [p, 'HOLD']],
+        [getEngineerWorkSummary, 'getEngineerWorkSummary', [p]],
+        [getPlannedHrsData, 'getPlannedHrsData', [p]],
+        [getActualHrsData, 'getActualHrsData', [p]]
+      ];
+    } else if (part === 'wbs') {
+      prefetchTabs_([D, { name: 'WBS Sheet' }], [], [D, { name: 'WBS Sheet' }]);
+      calls = [
+        [getWbsDataForProject, 'getWbsDataForProject', [p]],
+        [getFilteredMilestones, 'getFilteredMilestones', [p, 'COMPLETED']],
+        [getFilteredMilestones, 'getFilteredMilestones', [p, 'PENDING']]
+      ];
+    } else if (part === 'inventory') {
+      prefetchTabs_([], [D, { name: 'INVENTORY', startRow: 2 }], []);
+      calls = [
+        [getInventoryData, 'getInventoryData', [p]],
+        [getProductUsedData, 'getProductUsedData', [p]],
+        [getFilteredInventoryData, 'getFilteredInventoryData', [p, 'Planned Indent Qty']],
+        [getFilteredInventoryData, 'getFilteredInventoryData', [p, 'INDENT1']],
+        [getFilteredInventoryData, 'getFilteredInventoryData', [p, 'REC.1']],
+        [getFilteredInventoryData, 'getFilteredInventoryData', [p, 'CONSU.1']]
+      ];
+    } else if (part === 'billing') {
+      prefetchTabs_([], [D, { name: 'Billing' }], []);
+      calls = [
+        [getBillingData, 'getBillingData', [p]],
+        [getFilteredBillingData, 'getFilteredBillingData', [p, 'DONE']],
+        [getFilteredBillingData, 'getFilteredBillingData', [p, 'PENDING']]
+      ];
+    } else if (part === 'other') {
+      prefetchTabs_(
+        [{ name: 'Manpower Cost' }, { name: 'FINANCE/ACCOUNTS' }, { name: 'Expenses' },
+         { name: 'Auditor Sheet Manpower', startRow: 2 }, { name: 'Auditor Sheet Item', startRow: 2 }],
+        [D, { name: 'Auditor Sheet Drawing', startRow: 2 }],
+        []
+      );
+      // Manpower/Finance/Expenses/Audit tabs also need the details tab in plain form (links version covers it)
+      calls = [
+        [getManpowerCostData, 'getManpowerCostData', [p]],
+        [getFinanceData, 'getFinanceData', [p]],
+        [getProjectDetailsFormData, 'getProjectDetailsFormData', [p]],
+        [getAuditManpowerData, 'getAuditManpowerData', [p]],
+        [getAuditItemData, 'getAuditItemData', [p]],
+        [getAuditDrawingData, 'getAuditDrawingData', [p]],
+        [getExpenseDetailsData, 'getExpenseDetailsData', [p]]
+      ];
+    } else {
+      return { part: part, error: 'Unknown part: ' + part };
+    }
+
+    const data = {};
+    calls.forEach(c => { data[c[1] + '|' + JSON.stringify(c[2])] = c[0].apply(null, c[2]); });
+    return { part: part, data: data };
+  } catch (e) {
+    Logger.log('Error in getBundlePart(' + part + '): ' + e.toString());
+    return { part: part, error: e.toString() };
+  } finally {
+    TAB_MEMO_ = null;
+  }
+}
+
+/**
+ * Reads several tabs in ONE Sheets API call.
+ * @param {string} ssId Spreadsheet ID.
+ * @param {{name:string,startRow?:number}[]} specs Tabs to read (startRow = header row, default 1).
+ * @param {{unformatted?:boolean, links?:boolean}} opt
+ *   unformatted: raw values (numbers/date serials) like getValues(); default = displayed text like getDisplayValues().
+ *   links: also return hyperlinks per cell (uses Spreadsheets.get; values are always displayed text).
+ * @returns {Object} { tabName: { values: any[][], links?: (string|null)[][] } } (missing tabs are absent)
+ */
+function readTabs_(ssId, specs, opt) {
+  opt = opt || {};
+
+  // Serve from the per-request memo when getBundlePart has prefetched the tabs.
+  if (TAB_MEMO_) {
+    const hit = {};
+    const all = specs.every(s => {
+      const e = TAB_MEMO_[memoKey_(s, opt)];
+      if (e && (!opt.links || e.links)) { hit[s.name] = e; return true; }
+      return false;
+    });
+    if (all) return hit;
+  }
+
+  const out = {};
+  const rangeOf = s => "'" + s.name.replace(/'/g, "''") + "'" + ((s.startRow || 1) > 1 ? '!A' + s.startRow + ':ZZ' : '');
+  const width = rows => rows.reduce((m, r) => Math.max(m, r.length), 0);
+
+  try {
+    if (opt.links) {
+      // Step 1: cheap values read (empty grid cells are trimmed) to learn each tab's real data extent.
+      const vres = Sheets.Spreadsheets.Values.batchGet(ssId, {
+        ranges: specs.map(rangeOf),
+        valueRenderOption: 'FORMATTED_VALUE',
+        majorDimension: 'ROWS'
+      });
+      const vals = {};
+      const tight = [];
+      (vres.valueRanges || []).forEach((vr, i) => {
+        const s = specs[i];
+        const rows = vr.values || [];
+        const w = width(rows);
+        vals[s.name] = rows.map(r => { const c = r.slice(); while (c.length < w) c.push(''); return c; });
+        if (rows.length && w) {
+          const start = s.startRow || 1;
+          tight.push("'" + s.name.replace(/'/g, "''") + "'!A" + start + ':' + colLetter_(w) + (start + rows.length - 1));
+        }
+      });
+
+      // Step 2: hyperlinks only for the cells that actually hold data.
+      const linkGrid = {};
+      if (tight.length) {
+        const res = Sheets.Spreadsheets.get(ssId, {
+          ranges: tight,
+          fields: 'sheets(properties.title,data.rowData.values.hyperlink)'
+        });
+        (res.sheets || []).forEach(sh => {
+          linkGrid[sh.properties.title] = ((sh.data || [])[0] || {}).rowData || [];
+        });
+      }
+
+      specs.forEach(s => {
+        if (!vals[s.name]) return;
+        const values = vals[s.name];
+        const rd = linkGrid[s.name] || [];
+        const links = values.map((row, r) => {
+          const cells = (rd[r] && rd[r].values) || [];
+          return row.map((_, c) => (cells[c] && cells[c].hyperlink) || null);
+        });
+        out[s.name] = { values: values, links: links };
+      });
+    } else {
+      const res = Sheets.Spreadsheets.Values.batchGet(ssId, {
+        ranges: specs.map(rangeOf),
+        valueRenderOption: opt.unformatted ? 'UNFORMATTED_VALUE' : 'FORMATTED_VALUE',
+        majorDimension: 'ROWS'
+      });
+      (res.valueRanges || []).forEach((vr, i) => {
+        const rows = vr.values || [];
+        const w = width(rows);
+        out[specs[i].name] = {
+          values: rows.map(r => { const c = r.slice(); while (c.length < w) c.push(''); return c; })
+        };
+      });
+    }
+  } catch (e) {
+    // A missing tab makes the whole batch fail -> retry tab by tab so the others still load.
+    Logger.log('readTabs_ batch failed (' + e + ')');
+    if (specs.length > 1) {
+      specs.forEach(s => Object.assign(out, readTabs_(ssId, [s], opt)));
+    }
+  }
+  return out;
+}
+
+/**
+ * Looks up a project's ISO No. in 'Project Details Form' and loads one data tab,
+ * both in a single Sheets API call.
+ * @param {string} projectName
+ * @param {string} tab Data tab name.
+ * @param {{headerRow?:number, unformatted?:boolean, links?:boolean, rawIso?:boolean, allowNoIso?:boolean}} o
+ *   headerRow: row holding the headers in `tab` (default 1). rawIso: don't run cleanIso on the ISO.
+ * @returns {{error:string}|{isoNo:string, headers:any[], rows:any[][], links:(string|null)[][]|null}}
+ */
+function loadProjectTab_(projectName, tab, o) {
+  o = o || {};
+  const DET = 'Project Details Form';
+  const ssId = getSsId_();
+  const specs = [{ name: DET, startRow: 1 }];
+  if (tab !== DET) specs.push({ name: tab, startRow: o.headerRow || 1 });
+
+  const t = readTabs_(ssId, specs, { unformatted: o.unformatted, links: o.links });
+  if (!t[DET] || !t[tab]) {
+    return { error: "Required sheet ('" + DET + "' or '" + tab + "') not found." };
+  }
+
+  const dv = t[DET].values;
+  const dh = dv[0] || [];
+  const pIdx = dh.indexOf('PROJECT NAME');
+  const iIdx = dh.indexOf('ISO No.');
+  const projectRow = dv.slice(1).find(r => r[pIdx] === projectName);
+  if (!projectRow) return { error: `Project '${projectName}' not found.` };
+
+  const isoNo = o.rawIso ? projectRow[iIdx] : cleanIso(projectRow[iIdx]);
+  if (!isoNo && !o.allowNoIso) return { error: "ISO No. not found for this project." };
+
+  const v = t[tab].values;
+  return {
+    isoNo: isoNo,
+    headers: v[0] || [],
+    rows: v.slice(1),
+    links: t[tab].links ? t[tab].links.slice(1) : null
+  };
+}
+
+/**
  * Gets specific details for a selected project name.
  */
 function getProjectDetails(projectName) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('Project Details Form');
-  if (!sheet) return null;
+  const ssId = getSsId_();
+  const t = readTabs_(ssId, [{ name: 'Project Details Form' }], { unformatted: true });
+  if (!t['Project Details Form']) return null;
 
-  const data = sheet.getDataRange().getValues();
-  const headers = data.shift();
+  const data = t['Project Details Form'].values;
+  const headers = data[0] || [];
 
   const projectIndex = headers.indexOf('PROJECT NAME');
   const isoIndex = headers.indexOf('ISO No.');
@@ -902,7 +1215,7 @@ function getProjectDetails(projectName) {
   const personIndex = headers.indexOf('CONTACT PERSON');
   const itemIndex = headers.indexOf('item');
 
-  const projectRow = data.find(row => row[projectIndex] === projectName);
+  const projectRow = data.slice(1).find(row => row[projectIndex] === projectName);
 
   if (projectRow) {
     return {
@@ -920,13 +1233,13 @@ function getProjectDetails(projectName) {
  * @param {string} isoNo The ISO Number of the project.
  */
 function getChartData(isoNo) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const wbsSheet = ss.getSheetByName('WBS Sheet');
+  if (!isoNo) return [];
+  const ssId = getSsId_();
+  const t = readTabs_(ssId, [{ name: 'WBS Sheet' }], { unformatted: true });
+  if (!t['WBS Sheet']) return [];
 
-  if (!wbsSheet || !isoNo) return [];
-
-  const wbsData = wbsSheet.getDataRange().getValues();
-  const wbsHeaders = wbsData.shift();
+  const wbsData = t['WBS Sheet'].values;
+  const wbsHeaders = wbsData[0] || [];
 
   const wbsIsoIndex = wbsHeaders.indexOf('ISO No.');
   const milestoneIndex = wbsHeaders.indexOf('MILESTONE/BOQ ITEM');
@@ -934,28 +1247,14 @@ function getChartData(isoNo) {
   const actualEndIndex = wbsHeaders.indexOf('ACTUAL END DATE');
   if (wbsIsoIndex === -1) return [];
 
-  const chartData = wbsData
+  return wbsData.slice(1)
     .filter(row => row[wbsIsoIndex] === isoNo)
-    .map(row => {
-      const plannedDateValue = row[plannedStartIndex];
-      const actualEndDateValue = row[actualEndIndex];
-
-      const plannedDate = (plannedDateValue instanceof Date) ?
-      Utilities.formatDate(plannedDateValue, Session.getScriptTimeZone(), "dd/MM/yyyy") :
-      null;
-
-      const actualEndDate = (actualEndDateValue instanceof Date && actualEndDateValue.getTime() > 0) ?
-      Utilities.formatDate(actualEndDateValue, Session.getScriptTimeZone(), "dd/MM/yyyy") :
-      null;
-
-      return {
-        milestone: row[milestoneIndex],
-        planned: plannedDate,
-        actual: actualEndDate
-      };
-    })
+    .map(row => ({
+      milestone: row[milestoneIndex],
+      planned: serialToDdMmYyyy_(row[plannedStartIndex]),
+      actual: serialToDdMmYyyy_(row[actualEndIndex])
+    }))
     .filter(d => d.milestone && d.planned);
-  return chartData;
 }
 
 /**
@@ -1250,45 +1549,14 @@ function getProjectKpis(projectName = 'Hyatt regency') {
  */
 function getWbsDataForProject(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const wbsSheet = ss.getSheetByName('WBS Sheet');
+    const d = loadProjectTab_(projectName, 'WBS Sheet');
+    if (d.error) return { error: d.error };
 
-    if (!detailsSheet || !wbsSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'WBS Sheet') not found." };
-    }
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found in 'WBS Sheet'." };
 
-    // Step 1: Find the ISO No. from the project name
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) {
-      return { error: `Project '${projectName}' not found.` };
-    }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) {
-      return { error: "ISO No. not found for this project."};
-    }
-
-    // Step 2: Get and filter WBS Data using getDisplayValues to preserve formatting
-    const wbsData = wbsSheet.getDataRange().getDisplayValues();
-    const wbsHeaders = wbsData.shift();
-    const wbsIsoIndex = wbsHeaders.indexOf('ISO No.');
-
-    if (wbsIsoIndex === -1) {
-      return { error: "'ISO No.' column not found in 'WBS Sheet'."};
-    }
-
-    const filteredRows = wbsData.filter(row => row[wbsIsoIndex] === isoNo);
-
-    // Step 3: Return the headers and the filtered data
-    return { headers: wbsHeaders, rows: filteredRows };
-
-  } catch(e) {
+    return { headers: d.headers, rows: d.rows.filter(row => row[isoIdx] === d.isoNo) };
+  } catch (e) {
     Logger.log('Error in getWbsDataForProject: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
@@ -1296,123 +1564,49 @@ function getWbsDataForProject(projectName) {
 
 /**
  * Fetches all PROJECT PLANNING sheet data for a specific project based on its ISO No.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows for the project.
  */
 function getProjectPlanningData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
+    const d = loadProjectTab_(projectName, 'PROJECT PLANNING');
+    if (d.error) return { error: d.error };
 
-    if (!detailsSheet || !planningSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'PROJECT PLANNING') not found." };
-    }
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found in 'PROJECT PLANNING' sheet." };
 
-    // Step 1: Find the ISO No. from the project name
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) {
-      return { error: `Project '${projectName}' not found.` };
-    }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) {
-      return { error: "ISO No. not found for this project." };
-    }
-
-    // Step 2: Get and filter PROJECT PLANNING Data using getDisplayValues
-    const planningData = planningSheet.getDataRange().getDisplayValues();
-    const planningHeaders = planningData.shift();
-    const planningIsoIndex = planningHeaders.indexOf('ISO No.');
-
-    if (planningIsoIndex === -1) {
-      return { error: "'ISO No.' column not found in 'PROJECT PLANNING' sheet." };
-    }
-
-    const filteredRows = planningData.filter(row => row[planningIsoIndex] === isoNo);
-
-    // Step 3: Return the headers and the filtered data
-    return { headers: planningHeaders, rows: filteredRows };
-
-  } catch(e) {
+    return { headers: d.headers, rows: d.rows.filter(row => row[isoIdx] === d.isoNo) };
+  } catch (e) {
     Logger.log('Error in getProjectPlanningData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
 }
 
 /**
- * Fetches all INVENTORY sheet data for a specific project.
- * It also extracts the URL from the 'PO NO' column if it exists.
- * Note: This function assumes headers are on row 2 of the 'INVENTORY' sheet.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
+ * Fetches all INVENTORY sheet data for a specific project (headers on row 2).
+ * Replaces the 'PO NO' cell text with its hyperlink when one exists.
  */
 function getInventoryData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const inventorySheet = ss.getSheetByName('INVENTORY');
+    const d = loadProjectTab_(projectName, 'INVENTORY', { headerRow: 2, links: true });
+    if (d.error) return { error: d.error };
 
-    if (!detailsSheet || !inventorySheet) {
-      return { error: "Required sheet ('Project Details Form' or 'INVENTORY') not found." };
-    }
+    if (!d.headers.length) return { error: "Not enough data in 'INVENTORY' sheet." };
 
-    // Step 1: Find the ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
+    const isoIdx = d.headers.indexOf('ISO No.');
+    const poIdx = d.headers.indexOf('PO NO');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found on row 2 of 'INVENTORY' sheet." };
 
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) { return { error: `Project '${projectName}' not found.` }; }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) { return { error: "ISO No. not found for this project." }; }
-
-    // Step 2: Get and filter INVENTORY Data, handling headers on row 2
-    if (inventorySheet.getLastRow() < 2) {
-      return { error: "Not enough data in 'INVENTORY' sheet." };
-    }
-    
-    const inventoryRange = inventorySheet.getRange(2, 1, inventorySheet.getLastRow() - 1, inventorySheet.getLastColumn());
-    const displayValues = inventoryRange.getDisplayValues();
-    const richTextValues = inventoryRange.getRichTextValues(); // Get rich text to find links
-    
-    const inventoryHeaders = displayValues.shift();
-    richTextValues.shift(); // Also remove header row from rich text values
-    
-    const inventoryIsoIndex = inventoryHeaders.indexOf('ISO No.');
-    const poNoIndex = inventoryHeaders.indexOf('PO NO'); // Find the PO NO column index
-
-    if (inventoryIsoIndex === -1) {
-      return { error: "'ISO No.' column not found on row 2 of 'INVENTORY' sheet." };
-    }
-
-    const filteredRows = [];
-    displayValues.forEach((row, rowIndex) => {
-        // Filter by ISO No.
-        if (row[inventoryIsoIndex] === isoNo) {
-            // If a PO NO column exists, check for a link
-            if (poNoIndex !== -1) {
-                const poLink = richTextValues[rowIndex][poNoIndex].getLinkUrl();
-                if (poLink) {
-                    // If a link is found, replace the cell's text with the URL
-                    row[poNoIndex] = poLink;
-                }
-            }
-            filteredRows.push(row);
+    const rows = [];
+    d.rows.forEach((row, i) => {
+      if (row[isoIdx] === d.isoNo) {
+        if (poIdx !== -1) {
+          const link = d.links[i][poIdx];
+          if (link) row[poIdx] = link;
         }
+        rows.push(row);
+      }
     });
-
-    // Step 3: Return the headers and the modified, filtered data
-    return { headers: inventoryHeaders, rows: filteredRows };
-
-  } catch(e) {
+    return { headers: d.headers, rows: rows };
+  } catch (e) {
     Logger.log('Error in getInventoryData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
@@ -1420,46 +1614,17 @@ function getInventoryData(projectName) {
 
 /**
  * Fetches data from the 'Manpower Cost' sheet for a specific project.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
  */
 function getManpowerCostData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const costSheet = ss.getSheetByName('Manpower Cost');
+    const d = loadProjectTab_(projectName, 'Manpower Cost');
+    if (d.error) return { error: d.error };
 
-    if (!detailsSheet || !costSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'Manpower Cost') not found." };
-    }
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found in 'Manpower Cost' sheet." };
 
-    // Step 1: Find the ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) { return { error: `Project '${projectName}' not found.` }; }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) { return { error: "ISO No. not found for this project." }; }
-
-    // Step 2: Get and filter Manpower Cost Data
-    const costData = costSheet.getDataRange().getDisplayValues();
-    const costHeaders = costData.shift();
-    const costIsoIndex = costHeaders.indexOf('ISO No.');
-
-    if (costIsoIndex === -1) {
-      return { error: "'ISO No.' column not found in 'Manpower Cost' sheet." };
-    }
-
-    const filteredRows = costData.filter(row => row[costIsoIndex] === isoNo);
-
-    // Step 3: Return the headers and the filtered data
-    return { headers: costHeaders, rows: filteredRows };
-
-  } catch(e) {
+    return { headers: d.headers, rows: d.rows.filter(row => row[isoIdx] === d.isoNo) };
+  } catch (e) {
     Logger.log('Error in getManpowerCostData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
@@ -1467,267 +1632,110 @@ function getManpowerCostData(projectName) {
 
 /**
  * Fetches data from the 'FINANCE/ACCOUNTS' sheet for a specific project.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
  */
 function getFinanceData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const financeSheet = ss.getSheetByName('FINANCE/ACCOUNTS');
+    const d = loadProjectTab_(projectName, 'FINANCE/ACCOUNTS');
+    if (d.error) return { error: d.error };
 
-    if (!detailsSheet || !financeSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'FINANCE/ACCOUNTS') not found." };
-    }
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found in 'FINANCE/ACCOUNTS' sheet." };
 
-    // Step 1: Find the ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) { return { error: `Project '${projectName}' not found.` }; }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) { return { error: "ISO No. not found for this project." }; }
-
-    // Step 2: Get and filter FINANCE/ACCOUNTS Data
-    const financeData = financeSheet.getDataRange().getDisplayValues();
-    const financeHeaders = financeData.shift(); // Assuming headers are on row 1
-    const financeIsoIndex = financeHeaders.indexOf('ISO No.');
-
-    if (financeIsoIndex === -1) {
-      return { error: "'ISO No.' column not found in 'FINANCE/ACCOUNTS' sheet." };
-    }
-
-    // Filter rows. It might be one or more rows per project.
-    const filteredRows = financeData.filter(row => row[financeIsoIndex] === isoNo);
-
-    // Step 3: Return the headers and the filtered data
-    return { headers: financeHeaders, rows: filteredRows };
-
-  } catch(e) {
+    return { headers: d.headers, rows: d.rows.filter(row => row[isoIdx] === d.isoNo) };
+  } catch (e) {
     Logger.log('Error in getFinanceData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
 }
 
 /**
- * Fetches the specific row of data from 'Project Details Form' for a given project.
- * It also extracts URLs from cells with hyperlinks.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and the single data row.
+ * Fetches the row of 'Project Details Form' for a given project, replacing
+ * hyperlinked cells with their URLs.
  */
 function getProjectDetailsFormData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Project Details Form');
-    if (!sheet) {
-      return { error: "'Project Details Form' sheet not found." };
-    }
+    const DET = 'Project Details Form';
+    const ssId = getSsId_();
+    const t = readTabs_(ssId, [{ name: DET }], { links: true });
+    if (!t[DET]) return { error: "'Project Details Form' sheet not found." };
 
-    const range = sheet.getDataRange();
-    const values = range.getDisplayValues();
-    const richTextValues = range.getRichTextValues(); // Get rich text to find links
-
-    const headers = values.shift();
-    richTextValues.shift(); // Also remove header row from rich text values
+    const values = t[DET].values;
+    const links = t[DET].links;
+    const headers = values[0] || [];
 
     const projectColIdx = headers.indexOf('PROJECT NAME');
-    if (projectColIdx === -1) {
-      return { error: "'PROJECT NAME' column not found." };
-    }
+    if (projectColIdx === -1) return { error: "'PROJECT NAME' column not found." };
 
-    // Find the index of the row for the specified project
-    const projectRowIndex = values.findIndex(row => row[projectColIdx] === projectName);
+    const rowIdx = values.slice(1).findIndex(row => row[projectColIdx] === projectName);
+    if (rowIdx === -1) return { error: `Project '${projectName}' not found in 'Project Details Form'.` };
 
-    if (projectRowIndex === -1) {
-      return { error: `Project '${projectName}' not found in 'Project Details Form'.` };
-    }
-    
-    const projectRowData = values[projectRowIndex];
-    const projectRowRichText = richTextValues[projectRowIndex];
-
-    // List of headers that might contain a hyperlink
+    const rowData = values[rowIdx + 1];
+    const rowLinks = links[rowIdx + 1];
     const linkHeaders = ['SITE PICS', 'INFO-SHEET', 'PROJECT DRAWING', 'CUSTOMER PO COPY', 'CLIENT SITE VISITS/MOM'];
 
-    // Iterate through the headers to check for links
     headers.forEach((header, index) => {
-      if (linkHeaders.includes(header)) {
-        const link = projectRowRichText[index].getLinkUrl();
-        if (link) {
-          projectRowData[index] = link; // Replace the cell text with the actual URL
-        }
-      }
+      if (linkHeaders.includes(header) && rowLinks[index]) rowData[index] = rowLinks[index];
     });
 
-    return { headers: headers, row: projectRowData };
-
+    return { headers: headers, row: rowData };
   } catch (e) {
     Logger.log('Error in getProjectDetailsFormData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
 }
 
-/**
- * Fetches audit data from 'Auditor Sheet Manpower' for a specific project.
- * Headers are on row 2.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
- */
+/** Shared body for the three audit tabs without links (headers on row 2). */
+function getAuditTabData_(projectName, tab) {
+  try {
+    const d = loadProjectTab_(projectName, tab, { headerRow: 2 });
+    if (d.error) return { error: d.error };
+    if (!d.headers.length) return { headers: [], rows: [] };
+
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found on row 2 of '" + tab + "'." };
+
+    return { headers: d.headers, rows: d.rows.filter(row => row[isoIdx] === d.isoNo) };
+  } catch (e) {
+    Logger.log('Error in getAuditTabData_ (' + tab + '): ' + e.toString());
+    return { error: 'An error occurred: ' + e.message };
+  }
+}
+
+/** Audit data from 'Auditor Sheet Manpower' (headers on row 2). */
 function getAuditManpowerData(projectName) {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const auditSheet = ss.getSheetByName('Auditor Sheet Manpower');
-
-    if (!detailsSheet || !auditSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'Auditor Sheet Manpower') not found." };
-    }
-
-    // Get ISO No.
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) { return { error: `Project '${projectName}' not found.` }; }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) { return { error: "ISO No. not found for this project." }; }
-
-    // Get data from audit sheet (headers on row 2)
-    if (auditSheet.getLastRow() < 2) return { headers: [], rows: [] };
-    const auditRange = auditSheet.getRange(2, 1, auditSheet.getLastRow() - 1, auditSheet.getLastColumn());
-    const auditData = auditRange.getDisplayValues();
-    const auditHeaders = auditData.shift();
-    const auditIsoIndex = auditHeaders.indexOf('ISO No.');
-
-    if (auditIsoIndex === -1) {
-      return { error: "'ISO No.' column not found on row 2 of 'Auditor Sheet Manpower'." };
-    }
-
-    const filteredRows = auditData.filter(row => row[auditIsoIndex] === isoNo);
-    return { headers: auditHeaders, rows: filteredRows };
-
-  } catch (e) {
-    Logger.log('Error in getAuditManpowerData: ' + e.toString());
-    return { error: 'An error occurred: ' + e.message };
-  }
+  return getAuditTabData_(projectName, 'Auditor Sheet Manpower');
 }
 
-/**
- * Fetches audit data from 'Auditor Sheet Item' for a specific project.
- * Headers are on row 2.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
- */
+/** Audit data from 'Auditor Sheet Item' (headers on row 2). */
 function getAuditItemData(projectName) {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const auditSheet = ss.getSheetByName('Auditor Sheet Item');
-
-    if (!detailsSheet || !auditSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'Auditor Sheet Item') not found." };
-    }
-
-    // Get ISO No.
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) { return { error: `Project '${projectName}' not found.` }; }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) { return { error: "ISO No. not found for this project." }; }
-
-    // Get data from audit sheet (headers on row 2)
-    if (auditSheet.getLastRow() < 2) return { headers: [], rows: [] };
-    const auditRange = auditSheet.getRange(2, 1, auditSheet.getLastRow() - 1, auditSheet.getLastColumn());
-    const auditData = auditRange.getDisplayValues();
-    const auditHeaders = auditData.shift();
-    const auditIsoIndex = auditHeaders.indexOf('ISO No.'); // Using 'ISO No 2' as specified
-
-    if (auditIsoIndex === -1) {
-      return { error: "'ISO No.' column not found on row 2 of 'Auditor Sheet Item'." };
-    }
-
-    const filteredRows = auditData.filter(row => row[auditIsoIndex] === isoNo);
-    return { headers: auditHeaders, rows: filteredRows };
-
-  } catch (e) {
-    Logger.log('Error in getAuditItemData: ' + e.toString());
-    return { error: 'An error occurred: ' + e.message };
-  }
+  return getAuditTabData_(projectName, 'Auditor Sheet Item');
 }
 
 /**
- * Fetches audit data from 'Auditor Sheet Drawing' for a specific project.
- * Headers are on row 2. Extracts hyperlinks from specified columns.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
+ * Audit data from 'Auditor Sheet Drawing' (headers on row 2).
+ * Replaces 'Drawing Attachment' / 'Final Drawing' text with hyperlinks.
  */
 function getAuditDrawingData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const auditSheet = ss.getSheetByName('Auditor Sheet Drawing');
+    const d = loadProjectTab_(projectName, 'Auditor Sheet Drawing', { headerRow: 2, links: true });
+    if (d.error) return { error: d.error };
+    if (!d.headers.length) return { headers: [], rows: [] };
 
-    if (!detailsSheet || !auditSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'Auditor Sheet Drawing') not found." };
-    }
-    
-    // Get ISO No.
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) { return { error: `Project '${projectName}' not found.` }; }
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) { return { error: "ISO No. not found for this project." }; }
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found on row 2 of 'Auditor Sheet Drawing'." };
 
-    // Get data from audit sheet (headers on row 2)
-    if (auditSheet.getLastRow() < 2) return { headers: [], rows: [] };
-    const auditRange = auditSheet.getRange(2, 1, auditSheet.getLastRow() - 1, auditSheet.getLastColumn());
-    const auditData = auditRange.getDisplayValues();
-    const richTextValues = auditRange.getRichTextValues(); // For getting links
-    
-    const auditHeaders = auditData.shift();
-    richTextValues.shift(); // Sync rich text with data
-    const auditIsoIndex = auditHeaders.indexOf('ISO No.');
-    
-    if (auditIsoIndex === -1) {
-      return { error: "'ISO No.' column not found on row 2 of 'Auditor Sheet Drawing'." };
-    }
-
-    const filteredRows = [];
-    const linkHeaders = ['Drawing Attachment', 'Final Drawing'];
-    const headerIndicesToGetLinks = linkHeaders.map(h => auditHeaders.indexOf(h));
-
-    auditData.forEach((row, rowIndex) => {
-      if (row[auditIsoIndex] === isoNo) {
-        // Create a copy of the row to modify
-        const newRow = [...row];
-        const richTextRow = richTextValues[rowIndex];
-
-        headerIndicesToGetLinks.forEach(headerIndex => {
-          if (headerIndex !== -1) {
-            const link = richTextRow[headerIndex].getLinkUrl();
-            if (link) {
-              newRow[headerIndex] = link; // Replace cell text with the actual URL
-            }
-          }
+    const linkIdx = ['Drawing Attachment', 'Final Drawing'].map(h => d.headers.indexOf(h));
+    const rows = [];
+    d.rows.forEach((row, i) => {
+      if (row[isoIdx] === d.isoNo) {
+        const newRow = row.slice();
+        linkIdx.forEach(ci => {
+          if (ci !== -1 && d.links[i][ci]) newRow[ci] = d.links[i][ci];
         });
-        filteredRows.push(newRow);
+        rows.push(newRow);
       }
     });
-
-    return { headers: auditHeaders, rows: filteredRows };
+    return { headers: d.headers, rows: rows };
   } catch (e) {
     Logger.log('Error in getAuditDrawingData: ' + e.toString());
     return { error: 'An error occurred: ' + e.message };
@@ -1735,61 +1743,30 @@ function getAuditDrawingData(projectName) {
 }
 
 /**
- * REPLACED: Fetches a summary of work done by each engineer, summing their total hours.
- * @param {string} projectName The name of the project.
- * @returns {object} An array of objects, each containing an engineer's name and their total worked hours.
+ * Summary of worked hours per engineer for a project.
  */
 function getEngineerWorkSummary(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
-    if (!detailsSheet || !planningSheet) return { error: "Required sheets not found." };
+    const d = loadProjectTab_(projectName, 'PROJECT PLANNING', { unformatted: true, rawIso: true });
+    if (d.error) return { error: d.error };
 
-    // Get ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    const isoNo = projectRow[isoColIdx];
-    if (!isoNo) return { error: "ISO No. not found for this project." };
-
-    // Get Planning Data
-    const pData = planningSheet.getDataRange().getValues();
-    const pHeaders = pData.shift();
-    const pIsoIdx = pHeaders.indexOf("ISO No.");
-    const doerNameIdx = pHeaders.indexOf("Engineer Name (Doer)");
-    const workedHrsIdx = pHeaders.indexOf("Worked (Hrs)");
-
-    if (pIsoIdx === -1 || doerNameIdx === -1 || workedHrsIdx === -1) {
+    const isoIdx = d.headers.indexOf('ISO No.');
+    const doerIdx = d.headers.indexOf('Engineer Name (Doer)');
+    const hrsIdx = d.headers.indexOf('Worked (Hrs)');
+    if (isoIdx === -1 || doerIdx === -1 || hrsIdx === -1) {
       return { error: "Required columns not found in 'PROJECT PLANNING' sheet." };
     }
 
-    const projectPlanningData = pData.filter(r => r[pIsoIdx] === isoNo);
-    
-    // Use an object to sum hours for each engineer
     const engineerHours = {};
-    projectPlanningData.forEach(row => {
-        const name = row[doerNameIdx];
-        const hours = parseFloat(row[workedHrsIdx]) || 0;
-        if (name && hours > 0) {
-            if (engineerHours[name]) {
-                engineerHours[name] += hours;
-            } else {
-                engineerHours[name] = hours;
-            }
-        }
+    d.rows.filter(r => r[isoIdx] === d.isoNo).forEach(row => {
+      const name = row[doerIdx];
+      const hours = parseFloat(row[hrsIdx]) || 0;
+      if (name && hours > 0) engineerHours[name] = (engineerHours[name] || 0) + hours;
     });
-    
-    // Convert the object into an array for the frontend
-    const summaryData = Object.keys(engineerHours).map(name => {
-        return { name: name, hours: engineerHours[name] };
-    });
-    
-    return summaryData.sort((a, b) => b.hours - a.hours); // Sort by hours descending
 
+    return Object.keys(engineerHours)
+      .map(name => ({ name: name, hours: engineerHours[name] }))
+      .sort((a, b) => b.hours - a.hours);
   } catch (e) {
     Logger.log('Error in getEngineerWorkSummary: ' + e.toString());
     return { error: 'An error occurred: ' + e.message };
@@ -1797,140 +1774,82 @@ function getEngineerWorkSummary(projectName) {
 }
 
 /**
- * REPLACED: Fetches data from the 'MOM' sheet for a specific project, using ISO No.
+ * Fetches data from the 'MOM' sheet for a project ISO No., with hyperlinks.
  * @param {string} isoNo The ISO Number of the project.
- * @returns {object} An object containing the headers and filtered rows with URLs.
  */
 function getMomData(isoNo) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const momSheet = ss.getSheetByName('MOM');
+    if (!isoNo) return { error: "ISO No. was not provided to the server." };
 
-    if (!momSheet) {
-      return { error: "Required sheet ('MOM') not found." };
-    }
-    if (!isoNo) {
-      return { error: "ISO No. was not provided to the server." };
-    }
+    const ssId = getSsId_();
+    const t = readTabs_(ssId, [{ name: 'MOM' }], { links: true });
+    if (!t['MOM']) return { error: "Required sheet ('MOM') not found." };
 
-    // Get MOM Data with both display values and rich text for links
-    const momRange = momSheet.getDataRange();
-    const displayValues = momRange.getDisplayValues();
-    const richTextValues = momRange.getRichTextValues();
+    const values = t['MOM'].values;
+    const links = t['MOM'].links;
+    const momHeaders = (values[0] || []).map(h => String(h).trim());
 
-    const momHeaders = displayValues.shift().map(h => h.trim());
-    richTextValues.shift(); // Keep rich text array in sync
+    const isoIdx = momHeaders.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found in 'MOM' sheet." };
 
-    const momIsoIndex = momHeaders.indexOf('ISO No.');
-    if (momIsoIndex === -1) {
-      return { error: "'ISO No.' column not found in 'MOM' sheet." };
-    }
-
-    // Define columns that might contain hyperlinks
     const linkColumns = [
-        'Upload Image 1', 'Upload Image 2', 'Upload Image 3', 
-        'Upload Image 4', 'Upload Image 5', 'PDF Link', 'Client Signature (Client Attendee 1)',
-        'Mentor Signature (Mentor Attendee 1)'
+      'Upload Image 1', 'Upload Image 2', 'Upload Image 3',
+      'Upload Image 4', 'Upload Image 5', 'PDF Link', 'Client Signature (Client Attendee 1)',
+      'Mentor Signature (Mentor Attendee 1)'
     ];
-    const linkColumnIndices = linkColumns.map(h => momHeaders.indexOf(h));
+    const linkIdx = linkColumns.map(h => momHeaders.indexOf(h));
 
-    const filteredRows = [];
-    displayValues.forEach((row, rowIndex) => {
-        // Filter by the project's ISO No.
-        if (row[momIsoIndex] === isoNo) {
-            // Check for links in the designated columns for this row
-            linkColumnIndices.forEach(colIndex => {
-                if (colIndex !== -1) {
-                    const link = richTextValues[rowIndex][colIndex].getLinkUrl();
-                    if (link) {
-                        row[colIndex] = link;
-                    }
-                }
-            });
-            filteredRows.push(row);
-        }
+    const rows = [];
+    values.slice(1).forEach((row, i) => {
+      if (row[isoIdx] === isoNo) {
+        linkIdx.forEach(ci => {
+          if (ci !== -1 && links[i + 1][ci]) row[ci] = links[i + 1][ci];
+        });
+        rows.push(row);
+      }
     });
-
-    return { headers: momHeaders, rows: filteredRows };
-
-  } catch(e) {
+    return { headers: momHeaders, rows: rows };
+  } catch (e) {
     Logger.log('Error in getMomData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
 }
 
 /**
- * Fetches the detailed task counts (with combined pending) for each milestone of a project.
- * Used to populate the milestone details modal.
- * @param {string} projectName The name of the project.
- * @returns {object} An array of objects, each with milestone name and task counts.
+ * Detailed task counts per milestone (used by the milestone details modal).
  */
 function getMilestoneDetailsData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
+    const d = loadProjectTab_(projectName, 'PROJECT PLANNING', { unformatted: true, rawIso: true });
+    if (d.error) return { error: d.error };
 
-    if (!detailsSheet || !planningSheet) {
-      return { error: "Required sheets not found." };
-    }
-
-    // Get ISO No.
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    const isoNo = projectRow[isoColIdx];
-    if (!isoNo) return { error: "ISO No. not found for this project." };
-    
-    
-    // Get planning data and calculate detailed stats for each milestone
-    const pData = planningSheet.getDataRange().getValues();
-    const pHeaders = pData.shift();
-    const pIsoIdx = pHeaders.indexOf("ISO No.");
-    const milestoneIdx = pHeaders.indexOf("Milestone");
-    const statusIdx = pHeaders.indexOf("Status");
-
-    if (pIsoIdx === -1 || milestoneIdx === -1 || statusIdx === -1) {
+    const isoIdx = d.headers.indexOf('ISO No.');
+    const mileIdx = d.headers.indexOf('Milestone');
+    const statusIdx = d.headers.indexOf('Status');
+    if (isoIdx === -1 || mileIdx === -1 || statusIdx === -1) {
       return { error: "Required columns not found in 'PROJECT PLANNING' sheet." };
     }
 
-    const projectTasks = pData.filter(r => r[pIsoIdx] === isoNo);
-    const milestoneStats = {};
-    const milestoneStatusCounts = [];
-
-    projectTasks.forEach(task => {
-      const milestoneName = task[milestoneIdx];
-      if (!milestoneName) return;
-
-      if (!milestoneStats[milestoneName]) {
-        milestoneStats[milestoneName] = { done: 0, inProgress: 0, hold: 0 };
-      }
-      
+    const stats = {};
+    d.rows.filter(r => r[isoIdx] === d.isoNo).forEach(task => {
+      const name = task[mileIdx];
+      if (!name) return;
+      if (!stats[name]) stats[name] = { done: 0, inProgress: 0, hold: 0 };
       const status = (task[statusIdx] || '').toString().toUpperCase().trim();
-      switch (status) {
-        case 'DONE': milestoneStats[milestoneName].done++; break;
-        case 'IN-PROGRESS': milestoneStats[milestoneName].inProgress++; break;
-        case 'HOLD': milestoneStats[milestoneName].hold++; break;
-      }
+      if (status === 'DONE') stats[name].done++;
+      else if (status === 'IN-PROGRESS') stats[name].inProgress++;
+      else if (status === 'HOLD') stats[name].hold++;
     });
 
-    for (const milestoneName in milestoneStats) {
-      const stats = milestoneStats[milestoneName];
-      const total = stats.done + stats.inProgress + stats.hold;
-      const pending = stats.inProgress + stats.hold; // Combine them here
-      milestoneStatusCounts.push({
-        milestone: milestoneName,
-        total: total,
-        done: stats.done,
-        pending: pending // Return the combined value
-      });
-    }
-    
-    return milestoneStatusCounts;
-
+    return Object.keys(stats).map(name => {
+      const s = stats[name];
+      return {
+        milestone: name,
+        total: s.done + s.inProgress + s.hold,
+        done: s.done,
+        pending: s.inProgress + s.hold
+      };
+    });
   } catch (e) {
     Logger.log('Error in getMilestoneDetailsData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
@@ -1938,213 +1857,74 @@ function getMilestoneDetailsData(projectName) {
 }
 
 /**
- * Fetches product consumption data from the 'INVENTORY' sheet for a project.
- * This is specifically for the 'Product Used (Rs.)' modal. Headers are on row 2.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
+ * Product consumption rows from 'INVENTORY' (headers on row 2) where CONSU.2 > 0.
  */
 function getProductUsedData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const inventorySheet = ss.getSheetByName('INVENTORY');
+    const d = loadProjectTab_(projectName, 'INVENTORY', { headerRow: 2, rawIso: true });
+    if (d.error) return { error: d.error };
+    if (!d.headers.length) return { headers: [], rows: [] };
 
-    if (!detailsSheet || !inventorySheet) {
-      return { error: "Required sheets ('Project Details Form' or 'INVENTORY') not found." };
-    }
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found on row 2 of 'INVENTORY' sheet." };
 
-    // Get ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) { return { error: `Project '${projectName}' not found.` }; }
-    const isoNo = projectRow[isoColIdx];
-    if (!isoNo) { return { error: "ISO No. not found for this project." }; }
-
-    // Get Inventory Data (headers on row 2)
-    if (inventorySheet.getLastRow() < 2) {
-      return { headers: [], rows: [] };
-    }
-    const inventoryRange = inventorySheet.getRange(2, 1, inventorySheet.getLastRow() - 1, inventorySheet.getLastColumn());
-    const inventoryData = inventoryRange.getDisplayValues();
-    const inventoryHeaders = inventoryData.shift();
-    const inventoryIsoIndex = inventoryHeaders.indexOf('ISO No.');
-
-    if (inventoryIsoIndex === -1) {
-      return { error: "'ISO No.' column not found on row 2 of 'INVENTORY' sheet." };
-    }
-
-    // Filter rows for the project AND rows where the consumption cost ('CONSU.2') has a value > 0
-    const consu2Index = inventoryHeaders.indexOf('CONSU.2');
-    const filteredRows = inventoryData.filter(row => {
-        const isProjectMatch = row[inventoryIsoIndex] === isoNo;
-        const hasConsumption = consu2Index !== -1 && parseFloat(row[consu2Index]) > 0;
-        return isProjectMatch && hasConsumption;
-    });
-
-    return { headers: inventoryHeaders, rows: filteredRows };
-
-  } catch(e) {
+    const consu2Idx = d.headers.indexOf('CONSU.2');
+    const rows = d.rows.filter(row =>
+      row[isoIdx] === d.isoNo && consu2Idx !== -1 && parseFloat(row[consu2Idx]) > 0
+    );
+    return { headers: d.headers, rows: rows };
+  } catch (e) {
     Logger.log('Error in getProductUsedData: ' + e.toString());
     return { error: 'An error occurred: ' + e.message };
   }
 }
 
 /**
- * REPLACED FUNCTION: Fetches all data from the 'Expenses' sheet for a project.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
+ * All rows of 'Expenses' for a project.
  */
 function getExpenseDetailsData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const expenseSheet = ss.getSheetByName('Expenses');
+    const d = loadProjectTab_(projectName, 'Expenses', { rawIso: true });
+    if (d.error) return { error: d.error };
 
-    if (!detailsSheet || !expenseSheet) {
-      return { error: "Required sheet ('Project Details Form' or 'Expenses') not found." };
-    }
+    const isoIdx = d.headers.indexOf('ISO No.');
+    if (isoIdx === -1) return { error: "'ISO No.' column not found in 'Expenses' sheet." };
 
-    // Get ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    const isoNo = projectRow[isoColIdx];
-    if (!isoNo) return { error: "ISO No. not found for this project." };
-
-    // Get and filter data from the 'Expenses' sheet
-    const expenseData = expenseSheet.getDataRange().getDisplayValues();
-    const expenseHeaders = expenseData.shift(); // Headers on row 1
-    const expenseIsoIndex = expenseHeaders.indexOf('ISO No.');
-
-    if (expenseIsoIndex === -1) {
-      return { error: "'ISO No.' column not found in 'Expenses' sheet." };
-    }
-
-    const filteredRows = expenseData.filter(row => row[expenseIsoIndex] === isoNo);
-    
-    return { headers: expenseHeaders, rows: filteredRows };
-
+    return { headers: d.headers, rows: d.rows.filter(row => row[isoIdx] === d.isoNo) };
   } catch (e) {
     Logger.log('Error in getExpenseDetailsData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
 }
 
-// /**
-//  * REPLACED: Fetches tasks from 'PROJECT PLANNING' filtered by status.
-//  * @param {string} projectName The name of the project.
-//  * @param {string} filterType The status to filter by ('DONE', 'IN-PROGRESS', or 'HOLD').
-//  * @returns {object} An object containing the headers and filtered rows.
-//  */
-// function getFilteredTasks(projectName, filterType) {
-//   try {
-//     const ss = SpreadsheetApp.getActiveSpreadsheet();
-//     const detailsSheet = ss.getSheetByName('Project Details Form');
-//     const planningSheet = ss.getSheetByName('PROJECT PLANNING');
-//     if (!detailsSheet || !planningSheet) return { error: "Required sheets not found." };
-
-//     // --- THIS IS THE CORRECTED BLOCK ---
-//     // Using the standard, reliable method to get the ISO No.
-//     const detailsData = detailsSheet.getDataRange().getValues();
-//     const detailsHeaders = detailsData.shift();
-//     const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-//     const isoColIdx = detailsHeaders.indexOf('ISO No.');
-//     const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-//     if (!projectRow) return { error: `Project '${projectName}' not found.` };
-//     // const isoNo = projectRow[isoColIdx];
-//     const isoNo = cleanIso(projectRow[isoColIdx]);
-//     if (!isoNo) return { error: "ISO No. not found for this project." };
-//     // --- END OF CORRECTION ---
-
-//     // Get and filter PROJECT PLANNING Data
-//     const pData = planningSheet.getDataRange().getDisplayValues();
-//     const pHeaders = pData.shift();
-//     const pIsoIdx = pHeaders.indexOf("ISO No.");
-//     const statusIdx = pHeaders.indexOf("Status");
-
-//     if (pIsoIdx === -1 || statusIdx === -1) {
-//       return { error: "Required columns not found in 'PROJECT PLANNING' sheet." };
-//     }
-
-//     const projectTasks = pData.filter(r => r[pIsoIdx] === isoNo);
-//     let filteredRows = [];
-
-//     // Use the filterType directly (this part was correct)
-//     if (['DONE', 'IN-PROGRESS', 'HOLD'].includes(filterType)) {
-//       filteredRows = projectTasks.filter(task => (task[statusIdx] || '').toString().toUpperCase().trim() === filterType);
-//     }
-
-//     return { headers: pHeaders, rows: filteredRows };
-
-//   } catch (e) {
-//     Logger.log('Error in getFilteredTasks: ' + e.toString());
-//     return { error: 'An error occurred on the server: ' + e.message };
-//   }
-// }
-
 /**
- * REPLACED: Fetches tasks from 'PROJECT PLANNING' filtered by status.
- * @param {string} projectName The name of the project.
- * @param {string} filterType The status to filter by ('DONE', 'IN-PROGRESS', or 'HOLD').
- * @returns {object} An object containing the headers and filtered rows.
+ * Tasks from 'PROJECT PLANNING' filtered by status ('DONE', 'IN-PROGRESS', or 'HOLD').
  */
 function getFilteredTasks(projectName, filterType) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
-    if (!detailsSheet || !planningSheet) return { error: "Required sheets not found." };
+    const d = loadProjectTab_(projectName, 'PROJECT PLANNING');
+    if (d.error) return { error: d.error };
 
-    // Using the standard, reliable method to get the ISO No.
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) return { error: "ISO No. not found for this project." };
-
-    // Get and filter PROJECT PLANNING Data
-    const pData = planningSheet.getDataRange().getDisplayValues();
-    const pHeaders = pData.shift();
-    const pIsoIdx = pHeaders.indexOf("ISO No.");
-    const statusIdx = pHeaders.indexOf("Status");
-
-    if (pIsoIdx === -1 || statusIdx === -1) {
+    const isoIdx = d.headers.indexOf('ISO No.');
+    const statusIdx = d.headers.indexOf('Status');
+    if (isoIdx === -1 || statusIdx === -1) {
       return { error: "Required columns not found in 'PROJECT PLANNING' sheet." };
     }
 
-    const projectTasks = pData.filter(r => r[pIsoIdx] === isoNo);
-    let filteredRows =[];
-
-    // --- UPDATED LOGIC TO MATCH KPI DASHBOARD MATH ---
+    let rows = [];
     if (['DONE', 'IN-PROGRESS', 'HOLD'].includes(filterType)) {
-      filteredRows = projectTasks.filter(task => {
-        const statusVal = (task[statusIdx] || '').toString().toUpperCase().trim();
-        
+      rows = d.rows.filter(r => r[isoIdx] === d.isoNo).filter(task => {
+        const s = (task[statusIdx] || '').toString().toUpperCase().trim();
         if (filterType === 'HOLD') {
-          // KPI Logic: Anything NOT Done and NOT In-Progress is considered HOLD (including blanks)
-          return statusVal !== 'DONE' && statusVal !== 'IN-PROGRESS' && statusVal !== 'IN PROGRESS';
+          // Matches KPI logic: anything not Done / In-Progress (incl. blank) is HOLD
+          return s !== 'DONE' && s !== 'IN-PROGRESS' && s !== 'IN PROGRESS';
         } else if (filterType === 'IN-PROGRESS') {
-          // Handle both variations of In-Progress
-          return statusVal === 'IN-PROGRESS' || statusVal === 'IN PROGRESS';
-        } else {
-          // Exact match for DONE
-          return statusVal === filterType;
+          return s === 'IN-PROGRESS' || s === 'IN PROGRESS';
         }
+        return s === filterType;
       });
     }
-
-    return { headers: pHeaders, rows: filteredRows };
-
+    return { headers: d.headers, rows: rows };
   } catch (e) {
     Logger.log('Error in getFilteredTasks: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
@@ -2152,43 +1932,21 @@ function getFilteredTasks(projectName, filterType) {
 }
 
 /**
- * Fetches tasks from 'PROJECT PLANNING' that have planned hours assigned.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
+ * Tasks from 'PROJECT PLANNING' that have planned hours assigned.
  */
 function getPlannedHrsData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
-    if (!detailsSheet || !planningSheet) return { error: "Required sheets not found." };
+    const d = loadProjectTab_(projectName, 'PROJECT PLANNING', { rawIso: true });
+    if (d.error) return { error: d.error };
 
-    // Get ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    const isoNo = projectRow[isoColIdx];
-    if (!isoNo) return { error: "ISO No. not found for this project." };
+    const isoIdx = d.headers.indexOf('ISO No.');
+    const hrsIdx = d.headers.indexOf('Required Hours');
+    if (isoIdx === -1 || hrsIdx === -1) return { error: "Required columns not found." };
 
-    // Get and filter PROJECT PLANNING Data
-    const pData = planningSheet.getDataRange().getDisplayValues();
-    const pHeaders = pData.shift();
-    const pIsoIdx = pHeaders.indexOf("ISO No.");
-    const reqHrsIdx = pHeaders.indexOf("Required Hours");
-
-    if (pIsoIdx === -1 || reqHrsIdx === -1) return { error: "Required columns not found." };
-
-    const filteredRows = pData.filter(row => {
-        const isProjectMatch = row[pIsoIdx] === isoNo;
-        const hasPlannedHours = parseFloat(row[reqHrsIdx]) > 0;
-        return isProjectMatch && hasPlannedHours;
-    });
-
-    return { headers: pHeaders, rows: filteredRows };
-
+    return {
+      headers: d.headers,
+      rows: d.rows.filter(row => row[isoIdx] === d.isoNo && parseFloat(row[hrsIdx]) > 0)
+    };
   } catch (e) {
     Logger.log('Error in getPlannedHrsData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
@@ -2196,43 +1954,21 @@ function getPlannedHrsData(projectName) {
 }
 
 /**
- * Fetches tasks from 'PROJECT PLANNING' that have actual hours logged.
- * @param {string} projectName The name of the project.
- * @returns {object} An object containing the headers and filtered rows.
+ * Tasks from 'PROJECT PLANNING' that have actual hours logged.
  */
 function getActualHrsData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
-    if (!detailsSheet || !planningSheet) return { error: "Required sheets not found." };
-    
-    // Get ISO No.
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    const isoNo = projectRow[isoColIdx];
-    if (!isoNo) return { error: "ISO No. not found for this project." };
+    const d = loadProjectTab_(projectName, 'PROJECT PLANNING', { rawIso: true });
+    if (d.error) return { error: d.error };
 
-    // Get and filter PROJECT PLANNING Data
-    const pData = planningSheet.getDataRange().getDisplayValues();
-    const pHeaders = pData.shift();
-    const pIsoIdx = pHeaders.indexOf("ISO No.");
-    const workedHrsIdx = pHeaders.indexOf("Worked (Hrs)");
+    const isoIdx = d.headers.indexOf('ISO No.');
+    const hrsIdx = d.headers.indexOf('Worked (Hrs)');
+    if (isoIdx === -1 || hrsIdx === -1) return { error: "Required columns not found." };
 
-    if (pIsoIdx === -1 || workedHrsIdx === -1) return { error: "Required columns not found." };
-
-    const filteredRows = pData.filter(row => {
-        const isProjectMatch = row[pIsoIdx] === isoNo;
-        const hasActualHours = parseFloat(row[workedHrsIdx]) > 0;
-        return isProjectMatch && hasActualHours;
-    });
-
-    return { headers: pHeaders, rows: filteredRows };
-
+    return {
+      headers: d.headers,
+      rows: d.rows.filter(row => row[isoIdx] === d.isoNo && parseFloat(row[hrsIdx]) > 0)
+    };
   } catch (e) {
     Logger.log('Error in getActualHrsData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
@@ -2240,72 +1976,40 @@ function getActualHrsData(projectName) {
 }
 
 /**
- * REPLACED: Fetches milestone names from the WBS Sheet filtered by ACTUAL END DATE.
- * @param {string} projectName The name of the project.
- * @param {string} filterType The status to filter by ('COMPLETED' or 'PENDING').
+ * Milestone names from the WBS Sheet filtered by ACTUAL END DATE ('COMPLETED' or 'PENDING').
  */
 function getFilteredMilestones(projectName, filterType) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const wbsSheet = ss.getSheetByName('WBS Sheet');
-    if (!detailsSheet || !wbsSheet) return { error: "Required sheets not found." };
+    const d = loadProjectTab_(projectName, 'WBS Sheet', { unformatted: true, allowNoIso: true });
+    if (d.error) return { error: d.error };
 
-    // 1. Get ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-
-    // const isoNo = String(projectRow[isoColIdx]).trim();
-    // --- UPDATED LINE ---
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-
-    // 2. Get WBS Data
-    const wbsData = wbsSheet.getDataRange().getValues();
-    const wHeaders = wbsData[0].map(h => String(h).trim());
-    const wIsoIdx = wHeaders.indexOf("ISO No.");
-    const wMileIdx = wHeaders.indexOf("MILESTONE/BOQ ITEM");
-    const wActualEndIdx = wHeaders.indexOf("ACTUAL END DATE");
-
-    if (wIsoIdx === -1 || wMileIdx === -1 || wActualEndIdx === -1) {
+    const wHeaders = d.headers.map(h => String(h).trim());
+    const isoIdx = wHeaders.indexOf('ISO No.');
+    const mileIdx = wHeaders.indexOf('MILESTONE/BOQ ITEM');
+    const endIdx = wHeaders.indexOf('ACTUAL END DATE');
+    if (isoIdx === -1 || mileIdx === -1 || endIdx === -1) {
       return { error: "Required columns not found in 'WBS Sheet'." };
     }
 
-    // 3. Filter rows for this project and Group by Milestone Name
-    const projWbsRows = wbsData.slice(1).filter(r => String(r[wIsoIdx]).trim() === isoNo);
-    const milestoneGroups = {};
-    
-    projWbsRows.forEach(row => {
-      const mName = String(row[wMileIdx]).trim();
-      if (!mName || mName === "N/A" || mName === "") return;
-      if (!milestoneGroups[mName]) milestoneGroups[mName] = [];
-      milestoneGroups[mName].push(row);
+    const groups = {};
+    d.rows.filter(r => String(r[isoIdx]).trim() === d.isoNo).forEach(row => {
+      const name = String(row[mileIdx]).trim();
+      if (!name || name === 'N/A') return;
+      (groups[name] = groups[name] || []).push(row);
     });
 
-    const resultMilestones = [];
-
-    // 4. Evaluate each group based on ACTUAL END DATE
-    for (const milestoneName in milestoneGroups) {
-      const tasks = milestoneGroups[milestoneName];
-      
-      // A milestone is COMPLETED only if EVERY row in it has an Actual End Date
-      const isComplete = tasks.every(t => {
-        const dateVal = t[wActualEndIdx];
-        return dateVal && String(dateVal).trim() !== "" && String(dateVal).toUpperCase() !== "N/A";
+    const result = [];
+    for (const name in groups) {
+      // COMPLETED only if EVERY row has an Actual End Date
+      const isComplete = groups[name].every(t => {
+        const v = t[endIdx];
+        return v && String(v).trim() !== '' && String(v).toUpperCase() !== 'N/A';
       });
-      
-      if (filterType === 'COMPLETED' && isComplete) {
-        resultMilestones.push(milestoneName);
-      } else if (filterType === 'PENDING' && !isComplete) {
-        resultMilestones.push(milestoneName);
+      if ((filterType === 'COMPLETED' && isComplete) || (filterType === 'PENDING' && !isComplete)) {
+        result.push(name);
       }
     }
-
-    return resultMilestones.sort();
-
+    return result.sort();
   } catch (e) {
     Logger.log('Error in getFilteredMilestones: ' + e.toString());
     return { error: 'An error occurred: ' + e.message };
@@ -2313,106 +2017,52 @@ function getFilteredMilestones(projectName, filterType) {
 }
 
 /**
- * Fetches data from the 'INVENTORY' sheet, filtered to rows where a specific column has a value > 0.
- * @param {string} projectName The name of the project.
- * @param {string} filterColumn The name of the column to filter on (e.g., 'Qty', 'INDENT1').
- * @returns {object} An object containing the headers and filtered rows.
+ * 'INVENTORY' rows (headers on row 2) for a project where `filterColumn` > 0.
  */
 function getFilteredInventoryData(projectName, filterColumn) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const inventorySheet = ss.getSheetByName('INVENTORY');
-    if (!detailsSheet || !inventorySheet) return { error: "Required sheets not found." };
+    const d = loadProjectTab_(projectName, 'INVENTORY', { headerRow: 2 });
+    if (d.error) return { error: d.error };
+    if (!d.headers.length) return { headers: [], rows: [] };
 
-    // Get ISO No. for the project
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) return { error: "ISO No. not found for this project." };
-
-    // Get Inventory Data (headers on row 2)
-    if (inventorySheet.getLastRow() < 2) return { headers: [], rows: [] };
-    const inventoryRange = inventorySheet.getRange(2, 1, inventorySheet.getLastRow() - 1, inventorySheet.getLastColumn());
-    const displayValues = inventoryRange.getDisplayValues();
-    const inventoryHeaders = displayValues.shift();
-    
-    const inventoryIsoIndex = inventoryHeaders.indexOf('ISO No.');
-    const filterColumnIndex = inventoryHeaders.indexOf(filterColumn);
-
-    if (inventoryIsoIndex === -1 || filterColumnIndex === -1) {
+    const isoIdx = d.headers.indexOf('ISO No.');
+    const colIdx = d.headers.indexOf(filterColumn);
+    if (isoIdx === -1 || colIdx === -1) {
       return { error: `Required column ('ISO No.' or '${filterColumn}') not found in 'INVENTORY' sheet.` };
     }
 
-    // Filter rows for the project AND where the specified filter column has a value > 0
-    const filteredRows = displayValues.filter(row => {
-        const isProjectMatch = cleanIso(row[inventoryIsoIndex]) === isoNo;
-        const hasValue = parseFloat(String(row[filterColumnIndex]).replace(/,/g, '')) > 0;
-        return isProjectMatch && hasValue;
-    });
-
-    return { headers: inventoryHeaders, rows: filteredRows };
-
-  } catch(e) {
+    const rows = d.rows.filter(row =>
+      cleanIso(row[isoIdx]) === d.isoNo && parseFloat(String(row[colIdx]).replace(/,/g, '')) > 0
+    );
+    return { headers: d.headers, rows: rows };
+  } catch (e) {
     Logger.log('Error in getFilteredInventoryData: ' + e.toString());
     return { error: 'An error occurred on the server: ' + e.message };
   }
 }
 
+/**
+ * 'Billing' rows for a project; 'Supp Doc' text is replaced with its hyperlink.
+ */
 function getBillingData(projectName) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const billingSheet = ss.getSheetByName('Billing');
-    if (!detailsSheet || !billingSheet) return { error: "Required sheets not found." };
+    const d = loadProjectTab_(projectName, 'Billing', { links: true, allowNoIso: true });
+    if (d.error) return { error: d.error };
 
-    // 1. Get Clean ISO
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    
-    // Uses the helper function you added earlier
-    const isoNo = cleanIso(projectRow[isoColIdx]); 
+    const bHeaders = d.headers.map(h => String(h).trim());
+    let isoIdx = bHeaders.indexOf('ISO NO');
+    if (isoIdx === -1) isoIdx = bHeaders.indexOf('ISO No.');
+    const suppIdx = bHeaders.indexOf('Supp Doc');
+    if (isoIdx === -1) return { error: "'ISO NO' column not found in 'Billing' sheet." };
 
-    // 2. Get Billing Headers
-    const bRange = billingSheet.getDataRange();
-    const displayValues = bRange.getDisplayValues();
-    const richTextValues = bRange.getRichTextValues();
-    
-    const bHeaders = displayValues.shift().map(h => h.trim());
-    richTextValues.shift();
-
-    // Robust Header Search
-    let bIsoIdx = bHeaders.indexOf("ISO NO");
-    if (bIsoIdx === -1) bIsoIdx = bHeaders.indexOf("ISO No.");
-    const suppDocIdx = bHeaders.indexOf("Supp Doc");
-
-    if (bIsoIdx === -1) return { error: "'ISO NO' column not found in 'Billing' sheet." };
-
-    // 3. Filter Rows using cleanIso
-    const filteredRows = [];
-    displayValues.forEach((row, rowIndex) => {
-      // Clean the sheet data before comparing
-      if (cleanIso(row[bIsoIdx]) === isoNo) {
-        if (suppDocIdx !== -1) {
-          const link = richTextValues[rowIndex][suppDocIdx].getLinkUrl();
-          if (link) {
-            row[suppDocIdx] = link;
-          }
-        }
-        filteredRows.push(row);
+    const rows = [];
+    d.rows.forEach((row, i) => {
+      if (cleanIso(row[isoIdx]) === d.isoNo) {
+        if (suppIdx !== -1 && d.links[i][suppIdx]) row[suppIdx] = d.links[i][suppIdx];
+        rows.push(row);
       }
     });
-
-    return { headers: bHeaders, rows: filteredRows };
-
+    return { headers: bHeaders, rows: rows };
   } catch (e) {
     Logger.log('Error in getBillingData: ' + e.toString());
     return { error: 'An error occurred: ' + e.message };
@@ -2420,117 +2070,81 @@ function getBillingData(projectName) {
 }
 
 /**
- * REPLACED: Fetches and prepares data for the task progress timeline chart, using ISO No.
- * This version includes the most robust date parsing to prevent errors.
+ * Data for the task progress chart, using ISO No. (dates arrive as serial numbers).
  */
-function getTaskStatusChartData( isoNo = 'MWEPL/2024-25/01250') {
+function getTaskStatusChartData(isoNo = 'MWEPL/2024-25/01250') {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
-    if (!planningSheet || !isoNo) {
-      Logger.log("getTaskStatusChartData: Sheet not found or no ISO No provided.");
-      return []; // Always return an array
+    if (!isoNo) return [];
+    const ssId = getSsId_();
+    const t = readTabs_(ssId, [{ name: 'PROJECT PLANNING' }], { unformatted: true });
+    if (!t['PROJECT PLANNING']) {
+      Logger.log('getTaskStatusChartData: Sheet not found.');
+      return [];
     }
 
-    const pData = planningSheet.getDataRange().getValues();
-    const pHeaders = pData.shift().map(h => h.trim());
-    
-    const pIsoIdx = pHeaders.indexOf("ISO No.");
-    const taskIdx = pHeaders.indexOf("Task");
-    const statusPercentIdx = pHeaders.indexOf("Status %");
-    const plannedDateIdx = pHeaders.indexOf("Planned Date");
+    const pData = t['PROJECT PLANNING'].values;
+    const pHeaders = (pData[0] || []).map(h => String(h).trim());
+    const isoIdx = pHeaders.indexOf('ISO No.');
+    const taskIdx = pHeaders.indexOf('Task');
+    const pctIdx = pHeaders.indexOf('Status %');
+    const dateIdx = pHeaders.indexOf('Planned Date');
 
-    if (pIsoIdx === -1 || taskIdx === -1 || statusPercentIdx === -1) {
-      Logger.log("getTaskStatusChartData: A required column was not found.");
-      return []; // Always return an array
+    if (isoIdx === -1 || taskIdx === -1 || pctIdx === -1) {
+      Logger.log('getTaskStatusChartData: A required column was not found.');
+      return [];
     }
 
-    const chartData = pData
-      .filter(row => row[pIsoIdx] === isoNo && row[taskIdx])
+    const chartData = pData.slice(1)
+      .filter(row => row[isoIdx] === isoNo && row[taskIdx])
       .map(row => {
-        const status = parseFloat(row[statusPercentIdx]) || 0;
-        let plannedDateValue = (plannedDateIdx > -1) ? row[plannedDateIdx] : null;
-        
-        let jsDate = null;
-        if (plannedDateValue instanceof Date && !isNaN(plannedDateValue)) {
-            jsDate = plannedDateValue;
-        } else if (typeof plannedDateValue === 'string') {
-            const parts = plannedDateValue.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-            if (parts) {
-                jsDate = new Date(parts[3], parts[2] - 1, parts[1]);
-            }
+        const raw = dateIdx > -1 ? row[dateIdx] : null;
+        let ms = null;
+        if (typeof raw === 'number' && raw > 0) {
+          ms = Math.round((raw - 25569) * 86400 * 1000); // serial -> epoch ms (UTC)
+        } else if (typeof raw === 'string') {
+          const m = raw.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+          if (m) ms = Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
         }
-        
-        const formattedDate = (jsDate && !isNaN(jsDate)) 
-            ? Utilities.formatDate(jsDate, Session.getScriptTimeZone(), "dd-MM-yyyy") 
-            : "N/A";
-
         return {
           milestone: row[taskIdx],
-          planned: status,
-          actual: formattedDate,
-          rawDate: jsDate // Will be a valid Date object or null
+          planned: parseFloat(row[pctIdx]) || 0,
+          actual: ms !== null ? Utilities.formatDate(new Date(ms), 'UTC', 'dd-MM-yyyy') : 'N/A',
+          rawDate: ms // epoch ms or null (Date objects can't be returned to the client)
         };
       });
 
     chartData.sort((a, b) => {
-        if (!a.rawDate) return 1;
-        if (!b.rawDate) return -1;
-        return a.rawDate - b.rawDate;
+      if (a.rawDate === null) return 1;
+      if (b.rawDate === null) return -1;
+      return a.rawDate - b.rawDate;
     });
-
-    Logger.log(chartData)
-    
-    return chartData; // Ensure it returns the final array
-
+    return chartData;
   } catch (e) {
     Logger.log('FATAL Error in getTaskStatusChartData: ' + e.toString());
-    return []; // ALWAYS return an array, even on fatal error
+    return [];
   }
 }
 
 /**
- * Fetches data from the 'Billing' sheet, filtered by status ('DONE' or 'PENDING').
- * @param {string} projectName The name of the project.
- * @param {string} filterType The status to filter by.
- * @returns {object} An object containing the headers and filtered rows.
+ * 'Billing' rows filtered by status ('DONE' or 'PENDING').
  */
 function getFilteredBillingData(projectName, filterType) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const detailsSheet = ss.getSheetByName('Project Details Form');
-    const billingSheet = ss.getSheetByName('Billing');
-    if (!detailsSheet || !billingSheet) return { error: "Required sheets not found." };
+    const d = loadProjectTab_(projectName, 'Billing');
+    if (d.error) return { error: d.error };
 
-    // Get ISO No.
-    const detailsData = detailsSheet.getDataRange().getValues();
-    const detailsHeaders = detailsData.shift();
-    const projectColIdx = detailsHeaders.indexOf('PROJECT NAME');
-    const isoColIdx = detailsHeaders.indexOf('ISO No.');
-    const projectRow = detailsData.find(row => row[projectColIdx] === projectName);
-    if (!projectRow) return { error: `Project '${projectName}' not found.` };
-    // const isoNo = projectRow[isoColIdx];
-    const isoNo = cleanIso(projectRow[isoColIdx]);
-    if (!isoNo) return { error: "ISO No. not found for this project." };
+    const bHeaders = d.headers.map(h => String(h).trim());
+    const isoIdx = bHeaders.indexOf('ISO NO');
+    const statusIdx = bHeaders.indexOf('Status5');
+    if (isoIdx === -1 || statusIdx === -1) return { error: "Required columns not found in 'Billing' sheet." };
 
-    // Get Billing Data
-    const bData = billingSheet.getDataRange().getDisplayValues();
-    const bHeaders = bData.shift().map(h => h.trim());
-    const bIsoIdx = bHeaders.indexOf("ISO NO");
-    const bStatusIdx = bHeaders.indexOf("Status5");
-    if (bIsoIdx === -1 || bStatusIdx === -1) return { error: "Required columns not found in 'Billing' sheet." };
-    
-    const projectBillings = bData.filter(r => r[bIsoIdx] === isoNo);
-    let filteredRows = [];
+    const isDone = r => (r[statusIdx] || '').toString().trim().toUpperCase() === 'DONE';
+    const projectBillings = d.rows.filter(r => r[isoIdx] === d.isoNo);
+    let rows = [];
+    if (filterType === 'DONE') rows = projectBillings.filter(isDone);
+    else if (filterType === 'PENDING') rows = projectBillings.filter(r => !isDone(r));
 
-    if (filterType === 'DONE') {
-      filteredRows = projectBillings.filter(r => (r[bStatusIdx] || '').toString().trim().toUpperCase() === 'DONE');
-    } else if (filterType === 'PENDING') {
-      filteredRows = projectBillings.filter(r => (r[bStatusIdx] || '').toString().trim().toUpperCase() !== 'DONE');
-    }
-
-    return { headers: bHeaders, rows: filteredRows };
-
+    return { headers: bHeaders, rows: rows };
   } catch (e) {
     Logger.log('Error in getFilteredBillingData: ' + e.toString());
     return { error: 'An error occurred: ' + e.message };
@@ -2538,66 +2152,50 @@ function getFilteredBillingData(projectName, filterType) {
 }
 
 /**
- * REPLACED: Fetches and combines data for the Milestone Progress Combo Chart.
- * This version correctly filters out undefined or null milestone names.
+ * Data for the Milestone Progress combo chart (planning + billing in one API call).
  * @param {string} isoNo The ISO Number of the project.
- * @returns {object[]} An array of objects formatted for the D3 combo chart.
  */
 function getMilestoneComboChartData(isoNo) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const planningSheet = ss.getSheetByName('PROJECT PLANNING');
-    const billingSheet = ss.getSheetByName('Billing');
-    if (!planningSheet || !billingSheet || !isoNo) return [];
+    if (!isoNo) return [];
+    const ssId = getSsId_();
+    const t = readTabs_(ssId, [{ name: 'PROJECT PLANNING' }, { name: 'Billing' }], { unformatted: true });
+    if (!t['PROJECT PLANNING'] || !t['Billing']) return [];
 
-    // --- 1. Get all data for the project ---
-    const pData = planningSheet.getDataRange().getValues();
-    const pHeaders = pData.shift().map(h => h.trim());
-    const pIsoIdx = pHeaders.indexOf("ISO No.");
-    const pMilestoneIdx = pHeaders.indexOf("Milestone");
-    const pStatusPercentIdx = pHeaders.indexOf("Status %");
-    const projectTasks = pData.filter(r => r[pIsoIdx] === isoNo);
+    const pData = t['PROJECT PLANNING'].values;
+    const pHeaders = (pData[0] || []).map(h => String(h).trim());
+    const pIsoIdx = pHeaders.indexOf('ISO No.');
+    const pMileIdx = pHeaders.indexOf('Milestone');
+    const pPctIdx = pHeaders.indexOf('Status %');
+    const projectTasks = pData.slice(1).filter(r => r[pIsoIdx] === isoNo);
 
-    const bData = billingSheet.getDataRange().getValues();
-    const bHeaders = bData.shift().map(h => h.trim());
-    const bIsoIdx = bHeaders.indexOf("ISO NO");
-    const bMilestoneIdx = bHeaders.indexOf("Milestones");
-    const bStatusIdx = bHeaders.indexOf("Status5");
-    const projectBillings = bData.filter(r => r[bIsoIdx] === isoNo);
+    const bData = t['Billing'].values;
+    const bHeaders = (bData[0] || []).map(h => String(h).trim());
+    const bIsoIdx = bHeaders.indexOf('ISO NO');
+    const bMileIdx = bHeaders.indexOf('Milestones');
+    const bStatusIdx = bHeaders.indexOf('Status5');
+    const projectBillings = bData.slice(1).filter(r => r[bIsoIdx] === isoNo);
 
-    // --- 2. Create a unique, combined list of all milestones (CORRECTED) ---
-    const taskMilestones = projectTasks.map(r => r[pMilestoneIdx]);
-    const billingMilestones = projectBillings.map(r => r[bMilestoneIdx]);
-    // The .filter(Boolean) will remove any null, undefined, or empty strings.
-    const allMilestones = [...new Set([...taskMilestones, ...billingMilestones])].filter(Boolean);
+    const allMilestones = [...new Set([
+      ...projectTasks.map(r => r[pMileIdx]),
+      ...projectBillings.map(r => r[bMileIdx])
+    ])].filter(Boolean);
 
-    // --- 3. Calculate stats for each milestone ---
-    const chartData = allMilestones.map(milestoneName => {
-      // a) Calculate Task Progress %
-      const tasksForMilestone = projectTasks.filter(r => r[pMilestoneIdx] === milestoneName);
+    return allMilestones.map(name => {
+      const tasks = projectTasks.filter(r => r[pMileIdx] === name);
       let taskProgress = 0;
-      if (tasksForMilestone.length > 0) {
-        const totalPercent = tasksForMilestone.reduce((sum, task) => sum + (parseFloat(task[pStatusPercentIdx]) || 0), 0);
-        taskProgress = totalPercent / tasksForMilestone.length;
+      if (tasks.length > 0) {
+        taskProgress = tasks.reduce((s, r) => s + (parseFloat(r[pPctIdx]) || 0), 0) / tasks.length;
       }
 
-      // b) Calculate Billing Status %
-      const billingsForMilestone = projectBillings.filter(r => r[bMilestoneIdx] === milestoneName);
+      const bills = projectBillings.filter(r => r[bMileIdx] === name);
       let billingStatus = 0;
-      if (billingsForMilestone.length > 0) {
-        const doneCount = billingsForMilestone.filter(b => (b[bStatusIdx] || '').toString().trim().toUpperCase() === 'DONE').length;
-        billingStatus = (doneCount / billingsForMilestone.length) * 100;
+      if (bills.length > 0) {
+        const done = bills.filter(b => (b[bStatusIdx] || '').toString().trim().toUpperCase() === 'DONE').length;
+        billingStatus = (done / bills.length) * 100;
       }
-      
-      return {
-        milestone: milestoneName,
-        taskProgress: taskProgress,
-        billingStatus: billingStatus
-      };
+      return { milestone: name, taskProgress: taskProgress, billingStatus: billingStatus };
     });
-
-    return chartData;
-
   } catch (e) {
     Logger.log('Error in getMilestoneComboChartData: ' + e.toString());
     return [];

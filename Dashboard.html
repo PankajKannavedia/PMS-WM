@@ -763,6 +763,194 @@
     </div>
 
     <script>
+      /**
+       * PROGRESSIVE LOADER
+       * The project is loaded as 6 parallel server "parts" (see getBundlePart in Code.js).
+       * Each part's JSON is stored in memory as soon as it arrives and shown immediately;
+       * an overall progress bar shows the % of data loaded.
+       * dataRun mimics google.script.run for the tab/modal calls:
+       *   - result already loaded      -> returned instantly
+       *   - its part still loading     -> waits for that part (spinner stays), then returns
+       *   - part failed / unknown call -> normal direct server call (old behaviour)
+       */
+      let projectBundle = {};
+      let partState = {};      // part -> 'loading' | 'done' | 'failed'
+      let partWaiters = {};    // part -> [{key, ok, fn, args}]
+      let loadToken = 0;
+      const PART_WEIGHT = { projects: 10, dashboard: 27, planning: 13, wbs: 9, inventory: 13, billing: 9, other: 19 };
+      const PART_OF_FN = {
+        getProjectPlanningData: 'planning', getFilteredTasks: 'planning', getEngineerWorkSummary: 'planning',
+        getPlannedHrsData: 'planning', getActualHrsData: 'planning',
+        getWbsDataForProject: 'wbs', getFilteredMilestones: 'wbs',
+        getInventoryData: 'inventory', getProductUsedData: 'inventory', getFilteredInventoryData: 'inventory',
+        getBillingData: 'billing', getFilteredBillingData: 'billing',
+        getManpowerCostData: 'other', getFinanceData: 'other', getProjectDetailsFormData: 'other',
+        getAuditManpowerData: 'other', getAuditItemData: 'other', getAuditDrawingData: 'other',
+        getExpenseDetailsData: 'other'
+      };
+
+      function respondFromBundle_(key, ok, fn, args) {
+        if (Object.prototype.hasOwnProperty.call(projectBundle, key)) {
+          // Fresh copy each time (like a real server call) so renderers can't mutate the cache
+          const result = JSON.parse(JSON.stringify(projectBundle[key]));
+          setTimeout(function () { ok(result); }, 0);
+        } else {
+          google.script.run.withSuccessHandler(ok)[fn].apply(null, args);
+        }
+      }
+
+      const dataRun = {
+        withSuccessHandler: function (ok) {
+          return new Proxy({}, {
+            get: function (_, fn) {
+              return function () {
+                const args = Array.prototype.slice.call(arguments);
+                const key = fn + '|' + JSON.stringify(args);
+                const part = PART_OF_FN[fn];
+                if (Object.prototype.hasOwnProperty.call(projectBundle, key)) {
+                  respondFromBundle_(key, ok, fn, args);
+                } else if (part && partState[part] === 'loading') {
+                  (partWaiters[part] = partWaiters[part] || []).push({ key: key, ok: ok, fn: fn, args: args });
+                } else {
+                  google.script.run.withSuccessHandler(ok)[fn].apply(null, args);
+                }
+              };
+            }
+          });
+        }
+      };
+
+      // ---------- Blocking percentage spinner ----------
+      let loaderVisible_ = false;
+      let loaderPrevDisabled_ = false;
+      let loaderSafety_ = null;
+
+      function ensureLoaderDom_() {
+        let o = document.getElementById('load-overlay');
+        if (o) return o;
+        const style = document.createElement('style');
+        style.textContent = '@keyframes ld-spin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(style);
+        o = document.createElement('div');
+        o.id = 'load-overlay';
+        o.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.6);display:none;align-items:center;justify-content:center;cursor:wait';
+        o.innerHTML =
+          '<div style="background:#fff;border-radius:16px;padding:28px 36px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.3);font-family:Inter,Arial,sans-serif;min-width:260px">' +
+            '<div style="position:relative;width:132px;height:132px;margin:0 auto 14px">' +
+              '<div style="position:absolute;inset:0;border-radius:50%;border:3px solid transparent;border-top-color:#93c5fd;animation:ld-spin 1s linear infinite"></div>' +
+              '<svg width="132" height="132" viewBox="0 0 132 132" style="position:absolute;inset:0;transform:rotate(-90deg)">' +
+                '<circle cx="66" cy="66" r="54" fill="none" stroke="#e5e7eb" stroke-width="10"></circle>' +
+                '<circle id="ld-ring" cx="66" cy="66" r="54" fill="none" stroke="#1e3a5f" stroke-width="10" stroke-linecap="round" stroke-dasharray="339.29" stroke-dashoffset="339.29" style="transition:stroke-dashoffset .4s"></circle>' +
+              '</svg>' +
+              '<div id="ld-pct" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#1e3a5f">0%</div>' +
+            '</div>' +
+            '<div id="ld-label" style="font-size:14px;font-weight:600;color:#1e3a5f">Loading…</div>' +
+            '<div style="font-size:11px;color:#6b7280;margin-top:6px">Please wait. Project selection is locked until loading completes.</div>' +
+          '</div>';
+        document.body.appendChild(o);
+        return o;
+      }
+
+      function showLoader_() {
+        const o = ensureLoaderDom_();
+        const sel = document.getElementById('project-name');
+        if (!loaderVisible_) {
+          loaderVisible_ = true;
+          loaderPrevDisabled_ = sel ? sel.disabled : false;
+          o.style.display = 'flex';
+          // Safety net: never leave the page locked forever if a server call hangs
+          clearTimeout(loaderSafety_);
+          loaderSafety_ = setTimeout(function () { hideLoader_(); }, 180000);
+        }
+        if (sel) sel.disabled = true; // also blocks keyboard changes
+      }
+
+      function hideLoader_() {
+        const o = document.getElementById('load-overlay');
+        if (o) o.style.display = 'none';
+        clearTimeout(loaderSafety_);
+        if (loaderVisible_) {
+          const sel = document.getElementById('project-name');
+          if (sel) sel.disabled = loaderPrevDisabled_;
+        }
+        loaderVisible_ = false;
+      }
+
+      function updateLoadProgress_() {
+        let total = 0, done = 0, pendingNames = [];
+        Object.keys(partState).forEach(function (p) {
+          const w = PART_WEIGHT[p] || 0;
+          total += w;
+          if (partState[p] === 'done' || partState[p] === 'failed') done += w;
+          else pendingNames.push(p);
+        });
+        const pct = total ? Math.round(done / total * 100) : 100;
+        if (pct >= 100) { setTimeout(function () { if (!pendingParts_()) hideLoader_(); }, 300); }
+        showLoader_();
+        ensureLoaderDom_();
+        document.getElementById('ld-pct').textContent = pct + '%';
+        document.getElementById('ld-ring').style.strokeDashoffset = String(339.29 * (1 - pct / 100));
+        document.getElementById('ld-label').textContent =
+          partState.projects === 'loading' ? 'Loading projects…' : 'Loading project data…';
+      }
+
+      function pendingParts_() {
+        return Object.keys(partState).some(function (p) { return partState[p] === 'loading'; });
+      }
+
+      function beginInitialLoad_() {
+        partState = {};
+        Object.keys(PART_WEIGHT).forEach(function (p) { partState[p] = 'loading'; });
+        updateLoadProgress_();
+      }
+
+      function finishPart_(part, ok) {
+        partState[part] = ok ? 'done' : 'failed';
+        const waiters = partWaiters[part] || [];
+        partWaiters[part] = [];
+        waiters.forEach(function (w) { respondFromBundle_(w.key, w.ok, w.fn, w.args); });
+        updateLoadProgress_();
+      }
+
+      function startProjectLoad(projectName, onDashboard) {
+        const token = ++loadToken;
+        const t0 = Date.now();
+        projectBundle = {};
+        partWaiters = {};
+        // Keep the "projects" step only while the first-load spinner is still showing
+        if (!loaderVisible_) delete partState.projects;
+        Object.keys(PART_WEIGHT).forEach(function (p) { if (p !== 'projects') partState[p] = 'loading'; });
+        updateLoadProgress_();
+
+        Object.keys(PART_WEIGHT).forEach(function (part) {
+          if (part === 'projects') return;
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (token !== loadToken) return; // user switched project meanwhile
+              console.log('[load] ' + part + ': server ' + (res && res.ms) + ' ms, round trip ' + (Date.now() - t0) + ' ms');
+              if (!res || res.error) {
+                console.error('Part "' + part + '" failed:', res ? res.error : 'no response');
+                if (part === 'dashboard') onDashboard({ error: res ? res.error : 'no response' });
+                finishPart_(part, false);
+                return;
+              }
+              if (part === 'dashboard') {
+                onDashboard(res.data);
+              } else {
+                Object.keys(res.data || {}).forEach(function (k) { projectBundle[k] = res.data[k]; });
+              }
+              finishPart_(part, true);
+            })
+            .withFailureHandler(function (err) {
+              if (token !== loadToken) return;
+              console.error('Part "' + part + '" failed:', err && err.message ? err.message : err);
+              if (part === 'dashboard') onDashboard({ error: err && err.message ? err.message : String(err) });
+              finishPart_(part, false);
+            })
+            .getBundlePart(projectName, part);
+        });
+      }
+
       document.addEventListener("DOMContentLoaded", initialLoad);
 
       /**
@@ -828,7 +1016,20 @@
 
             // Standard behavior: populate dropdown based on selected bucket
             if (typeof currentBucket !== 'undefined' && currentBucket) {
-                google.script.run.withSuccessHandler(populateProjectDropdown).getProjectNamesByBucket(currentBucket);
+                beginInitialLoad_();
+                const tProj = Date.now();
+                google.script.run
+                  .withSuccessHandler(function (names) {
+                    console.log('[load] projects list: ' + (Date.now() - tProj) + ' ms');
+                    finishPart_('projects', true);
+                    if (!names || names.length === 0) { hideLoader_(); }
+                    populateProjectDropdown(names);
+                  })
+                  .withFailureHandler(function (err) {
+                    console.error('Project list failed:', err && err.message ? err.message : err);
+                    hideLoader_();
+                  })
+                  .getProjectNamesByBucket(currentBucket);
             } else {
                 document.getElementById('project-name').innerHTML = '<option>No bucket selected.</option>';
             }
@@ -993,10 +1194,8 @@
         // 2. Show loading spinners for KPI CARDS (New)
         setKpiLoadingState();
 
-        // 3. Make ONE single call to the server
-        google.script.run
-          .withSuccessHandler(function(data) {
-            
+        // 3. Make ONE single call to the server: returns dashboard + every tab as JSON
+        const applyDashboardData = function(data) {
             if (!data || data.error) {
                console.error("Data load error", data ? data.error : "Unknown");
                alert("Failed to load project data.");
@@ -1020,9 +1219,9 @@
                 document.getElementById('chart_div').innerHTML = '<h3 class="text-center p-10 text-gray-500">ISO No. not found.</h3>';
                 document.getElementById('task_status_chart_div').innerHTML = '<h3 class="text-center p-10 text-gray-500">ISO No. not found.</h3>';
             }
+        };
 
-          })
-          .getAllDashboardData(projectName);
+        startProjectLoad(projectName, applyDashboardData);
       }
 
       /**
@@ -1056,7 +1255,7 @@
         timelineModalTitle.textContent = `Timeline Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div><p class="text-gray-600">Loading details...</p></div>';
         timelineModal.classList.remove("hidden");
-        google.script.run.withSuccessHandler(renderTimelineTable).getWbsDataForProject(projectName);
+        dataRun.withSuccessHandler(renderTimelineTable).getWbsDataForProject(projectName);
       }
 
       function renderTimelineTable(data) {
@@ -1111,7 +1310,7 @@
         timelineModalTitle.textContent = `Manpower & Engineer Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div><p class="text-gray-600">Loading details...</p></div>';
         timelineModal.classList.remove("hidden");
-        google.script.run.withSuccessHandler(renderProjectPlanningTable).getProjectPlanningData(projectName);
+        dataRun.withSuccessHandler(renderProjectPlanningTable).getProjectPlanningData(projectName);
       }
 
       function renderProjectPlanningTable(data) {
@@ -1198,7 +1397,7 @@
         timelineModalTitle.textContent = `Completed Tasks for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div></div>';
         timelineModal.classList.remove("hidden");
-        google.script.run.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "DONE");
+        dataRun.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "DONE");
       }
 
       function openInProgressTasksModal(event) {
@@ -1208,7 +1407,7 @@
         timelineModalTitle.textContent = `In-Progress Tasks for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div></div>';
         timelineModal.classList.remove("hidden");
-        google.script.run.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "IN-PROGRESS");
+        dataRun.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "IN-PROGRESS");
       }
 
       function openHoldTasksModal(event) {
@@ -1218,7 +1417,7 @@
         timelineModalTitle.textContent = `On-Hold Tasks for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div></div>';
         timelineModal.classList.remove("hidden");
-        google.script.run.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "HOLD");
+        dataRun.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "HOLD");
       }
 
       function openEngWorkedModal(event) {
@@ -1228,7 +1427,7 @@
         timelineModalTitle.textContent = `Engineer Work Summary for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div><p class="text-gray-600">Loading summary...</p></div>';
         timelineModal.classList.remove("hidden");
-        google.script.run.withSuccessHandler(renderEngWorkedTable).getEngineerWorkSummary(projectName);
+        dataRun.withSuccessHandler(renderEngWorkedTable).getEngineerWorkSummary(projectName);
       }
 
       function renderEngWorkedTable(data) {
@@ -1610,7 +1809,7 @@
         timelineModalTitle.textContent = `Inventory & Product Status for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderInventorySummaryView).getInventoryData(projectName);
+        dataRun.withSuccessHandler(renderInventorySummaryView).getInventoryData(projectName);
       }
 
       // --- NEW: FUNCTIONS TO OPEN MODAL FOR MANPOWER COST DATA ---
@@ -1629,7 +1828,7 @@
         timelineModal.classList.remove('hidden');
 
         // Call the server-side function for Manpower Cost data
-        google.script.run.withSuccessHandler(renderManpowerCostTable).getManpowerCostData(projectName);
+        dataRun.withSuccessHandler(renderManpowerCostTable).getManpowerCostData(projectName);
       }
 
       // --- NEW: FUNCTIONS TO OPEN MODAL FOR FINANCE DATA ---
@@ -1644,7 +1843,7 @@
         timelineModalTitle.textContent = `Payment Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderFinanceSummaryView).getFinanceData(projectName);
+        dataRun.withSuccessHandler(renderFinanceSummaryView).getFinanceData(projectName);
       }
 
        /**
@@ -1657,7 +1856,7 @@
         timelineModalTitle.textContent = `Billing Status for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderBillingSummaryView).getBillingData(projectName);
+        dataRun.withSuccessHandler(renderBillingSummaryView).getBillingData(projectName);
       }
 
       // --- NEW: FUNCTIONS TO OPEN MODAL FOR PROJECT DETAILS FORM DATA ---
@@ -1712,7 +1911,7 @@
             timelineModalContent.innerHTML = detailHtml;
         };
 
-        google.script.run.withSuccessHandler(renderDetailsView).getProjectDetailsFormData(projectName);
+        dataRun.withSuccessHandler(renderDetailsView).getProjectDetailsFormData(projectName);
       }
 
       // --- NEW: FUNCTIONS TO OPEN MODAL FOR AUDIT DATA ---
@@ -1726,7 +1925,7 @@
         timelineModalTitle.textContent = `Manpower Audit Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderAuditManpowerTable).getAuditManpowerData(projectName);
+        dataRun.withSuccessHandler(renderAuditManpowerTable).getAuditManpowerData(projectName);
       }
 
       /**
@@ -1738,7 +1937,7 @@
         timelineModalTitle.textContent = `Product/Item Audit Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderAuditItemTable).getAuditItemData(projectName);
+        dataRun.withSuccessHandler(renderAuditItemTable).getAuditItemData(projectName);
       }
 
       /**
@@ -1750,7 +1949,7 @@
         timelineModalTitle.textContent = `Drawing Audit Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderAuditDrawingTable).getAuditDrawingData(projectName);
+        dataRun.withSuccessHandler(renderAuditDrawingTable).getAuditDrawingData(projectName);
       }
 
       /**
@@ -1783,7 +1982,7 @@
         timelineModal.classList.remove('hidden');
 
         // Reuse the WBS data fetching function we created at the start
-        google.script.run.withSuccessHandler(renderTimelineTable).getWbsDataForProject(projectName);
+        dataRun.withSuccessHandler(renderTimelineTable).getWbsDataForProject(projectName);
       }
 
       // --- NEW: FUNCTIONS FOR PRODUCT USED DETAILS MODAL ---
@@ -1800,7 +1999,7 @@
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
 
-        google.script.run.withSuccessHandler(renderProductUsedTable).getProductUsedData(projectName);
+        dataRun.withSuccessHandler(renderProductUsedTable).getProductUsedData(projectName);
       }
 
       /**
@@ -1815,7 +2014,7 @@
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
 
-        google.script.run.withSuccessHandler(renderExpenseView).getExpenseDetailsData(projectName);
+        dataRun.withSuccessHandler(renderExpenseView).getExpenseDetailsData(projectName);
       }
 
       /**
@@ -1830,7 +2029,7 @@
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
 
-        google.script.run.withSuccessHandler(renderPlannedHrsTable).getPlannedHrsData(projectName);
+        dataRun.withSuccessHandler(renderPlannedHrsTable).getPlannedHrsData(projectName);
       }
 
       /**
@@ -1845,7 +2044,7 @@
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
 
-        google.script.run.withSuccessHandler(renderActualHrsTable).getActualHrsData(projectName);
+        dataRun.withSuccessHandler(renderActualHrsTable).getActualHrsData(projectName);
       }
 
       // --- NEW: FUNCTIONS FOR FILTERED MILESTONE LISTS ---
@@ -1862,7 +2061,7 @@
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
 
-        google.script.run.withSuccessHandler(renderMilestoneList).getFilteredMilestones(projectName, 'COMPLETED');
+        dataRun.withSuccessHandler(renderMilestoneList).getFilteredMilestones(projectName, 'COMPLETED');
       }
 
       /**
@@ -1877,7 +2076,7 @@
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
         timelineModal.classList.remove('hidden');
 
-        google.script.run.withSuccessHandler(renderMilestoneList).getFilteredMilestones(projectName, 'PENDING');
+        dataRun.withSuccessHandler(renderMilestoneList).getFilteredMilestones(projectName, 'PENDING');
       }
 
       // --- NEW: FUNCTIONS FOR FILTERED INVENTORY VIEWS ---
@@ -1889,7 +2088,7 @@
         timelineModalTitle.textContent = `Planned Indent Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'Planned Indent Qty']))
+        dataRun.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'Planned Indent Qty']))
             .getFilteredInventoryData(projectName, 'Planned Indent Qty');
       }
 
@@ -1900,7 +2099,7 @@
         timelineModalTitle.textContent = `Actual Indent Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'INDENT1']))
+        dataRun.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'INDENT1']))
             .getFilteredInventoryData(projectName, 'INDENT1');
       }
 
@@ -1911,7 +2110,7 @@
         timelineModalTitle.textContent = `Received Items Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'REC.1']))
+        dataRun.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'REC.1']))
             .getFilteredInventoryData(projectName, 'REC.1');
       }
 
@@ -1922,7 +2121,7 @@
         timelineModalTitle.textContent = `Used/Consumed Items Details for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'CONSU.1']))
+        dataRun.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'CONSU.1']))
             .getFilteredInventoryData(projectName, 'CONSU.1');
       }
 
@@ -2117,7 +2316,7 @@
         timelineModalTitle.textContent = `Completed Billings for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderBillingSummaryView).getFilteredBillingData(projectName, 'DONE');
+        dataRun.withSuccessHandler(renderBillingSummaryView).getFilteredBillingData(projectName, 'DONE');
       }
 
        function openBillingPendingModal(event) {
@@ -2127,7 +2326,7 @@
         timelineModalTitle.textContent = `Pending Billings for: ${projectName}`;
         timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
         timelineModal.classList.remove('hidden');
-        google.script.run.withSuccessHandler(renderBillingSummaryView).getFilteredBillingData(projectName, 'PENDING');
+        dataRun.withSuccessHandler(renderBillingSummaryView).getFilteredBillingData(projectName, 'PENDING');
       }
 
       /**
@@ -2860,7 +3059,7 @@
           } else {
               timelineModalContent.innerHTML = '<p class="text-yellow-500">Loading full task details...</p>';
               // Fallback: If projectPlanningData isn't loaded for some reason, we can fetch it.
-              google.script.run.withSuccessHandler(data => {
+              dataRun.withSuccessHandler(data => {
                   projectPlanningData = data;
                   showTaskProgressDetails(rowIndex); // Try again
               }).getProjectPlanningData(document.getElementById('project-name').value);
