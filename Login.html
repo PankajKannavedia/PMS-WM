@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <title>PMS Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      
+      .gradient-bg {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .gradient-bg::before {
+        content: '';
+        position: absolute;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+        background-size: 50px 50px;
+        animation: moveGrid 20s linear infinite;
+      }
+      
+      @keyframes moveGrid {
+        0% { transform: translate(0, 0); }
+        100% { transform: translate(50px, 50px); }
+      }
+      
+      .glass-effect {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+      }
+      
+      .input-focus {
+        transition: all 0.3s ease;
+      }
+      
+      .input-focus:focus {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.15);
+      }
+      
+      .button-hover {
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .button-hover::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+        transition: left 0.5s;
+      }
+      
+      .button-hover:hover::before {
+        left: 100%;
+      }
+      
+      .loader {
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        border-top: 3px solid white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .fade-in {
+        animation: fadeIn 0.6s ease-out;
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      .logo-float {
+        animation: float 3s ease-in-out infinite;
+      }
+      
+      @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+      }
+    </style>
+  </head>
+  <body class="gradient-bg min-h-screen">
+    <div class="min-h-screen flex items-center justify-center p-4 relative z-10">
+      <div class="w-full max-w-md fade-in">
+        <!-- Logo Section -->
+        <div class="text-center mb-8 logo-float">
+          <div class="inline-block bg-white rounded-2xl p-4 shadow-2xl">
+            <img
+              src="https://mentorwater.com/wp-content/uploads/2023/10/Mentor-Water-Pvt-Ltd-Logo-.png.webp"
+              alt="Logo"
+              class="h-16 w-auto"
+            />
+          </div>
+        </div>
+
+        <!-- Login Card -->
+        <div class="glass-effect rounded-3xl shadow-2xl p-8 space-y-6">
+          <div class="text-center space-y-2">
+            <h1 class="text-3xl font-bold text-gray-900 tracking-tight">
+              Welcome Back
+            </h1>
+            <p class="text-gray-600 text-sm font-medium">
+              Project Management System
+            </p>
+            <p class="text-gray-500 text-xs">
+              Sign in to access your dashboard
+            </p>
+          </div>
+
+          <form id="loginForm" class="space-y-5">
+            <!-- Username Input -->
+            <div class="space-y-2">
+              <label for="username" class="block text-sm font-semibold text-gray-700">
+                Username
+              </label>
+              <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <input
+                  type="text"
+                  id="username"
+                  name="username"
+                  class="input-focus block w-full pl-12 pr-4 py-3.5 text-gray-900 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-gray-400"
+                  placeholder="Enter your username"
+                  required
+                />
+              </div>
+            </div>
+
+            <!-- Password Input -->
+            <div class="space-y-2">
+              <label for="password" class="block text-sm font-semibold text-gray-700">
+                Password
+              </label>
+              <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  class="input-focus block w-full pl-12 pr-4 py-3.5 text-gray-900 bg-white border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-gray-400"
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
+            </div>
+
+            <!-- Login Button -->
+            <div class="pt-2">
+              <button
+                type="submit"
+                id="loginButton"
+                class="button-hover w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold py-3.5 px-6 rounded-xl hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                <span id="loginButtonText">Sign In</span>
+                <div id="loginLoader" class="loader hidden"></div>
+              </button>
+            </div>
+          </form>
+
+          <!-- Error Message -->
+          <div id="errorMessageContainer" class="min-h-[24px]">
+            <div id="errorMessage" class="text-sm text-red-600 text-center font-medium bg-red-50 rounded-lg py-2 px-4 hidden"></div>
+          </div>
+
+          <!-- Footer -->
+          <div class="text-center pt-4 border-t border-gray-200">
+            <p class="text-xs text-gray-500">
+              Secure login powered by Google Apps Script
+            </p>
+          </div>
+        </div>
+
+        <!-- Additional Info -->
+        <div class="mt-6 text-center">
+          <p class="text-white text-xs opacity-80">
+            © 2025 Mentor Water Pvt Ltd. All rights reserved.
+          </p>
+        </div>
+      </div>
+    </div>
+
+   <script>
+      const loginForm = document.getElementById("loginForm");
+      const loginButton = document.getElementById("loginButton");
+      const loginButtonText = document.getElementById("loginButtonText");
+      const loginLoader = document.getElementById("loginLoader");
+      const errorMessage = document.getElementById("errorMessage");
+      
+      // We will place the URL in a hidden span to avoid concatenation issues
+      const redirectUrl = "<?!= url ?>";
+
+      loginForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+
+        loginButton.disabled = true;
+        loginButtonText.textContent = "Authenticating...";
+        loginLoader.classList.remove("hidden");
+        errorMessage.classList.add("hidden");
+
+        google.script.run
+          .withSuccessHandler(function (response) {
+            if (response.success) {
+              // Instead of auto-redirecting (which causes the SecurityError),
+              // we transform the login card into a success state.
+              loginForm.innerHTML = 
+                '<div class="text-center py-6">' +
+                  '<p class="text-green-600 font-bold text-lg mb-4">Login Successful!</p>' +
+                  '<a href="' + redirectUrl + '" target="_top" class="block w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition">' +
+                    'Enter Dashboard' +
+                  '</a>' +
+                '</div>';
+            } else {
+              errorMessage.textContent = response.message || "Invalid credentials.";
+              errorMessage.classList.remove("hidden");
+              loginButton.disabled = false;
+              loginButtonText.textContent = "Sign In";
+              loginLoader.classList.add("hidden");
+            }
+          })
+          .withFailureHandler(function () {
+            errorMessage.textContent = "Connection error. Please try again.";
+            errorMessage.classList.remove("hidden");
+            loginButton.disabled = false;
+            loginButtonText.textContent = "Sign In";
+            loginLoader.classList.add("hidden");
+          })
+          .authenticateUser(username, password);
+      });
+    </script>
+  </body>
+</html>

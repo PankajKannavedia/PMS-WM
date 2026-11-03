@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <title>Project Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      
+      .truncate-cell {
+        max-width: 250px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      
+      .fade-in {
+        animation: fadeIn 0.4s ease-out;
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      .slide-in {
+        animation: slideIn 0.3s ease-out;
+      }
+      
+      @keyframes slideIn {
+        from {
+          transform: translateX(-10px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      
+      .glass-card {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(10px);
+      }
+      
+      .bucket-card {
+        transition: all 0.3s ease;
+      }
+      
+      .bucket-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+      }
+      
+      .spinner {
+        border: 3px solid #e5e7eb;
+        border-top: 3px solid #3b82f6;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .table-row-hover {
+        transition: all 0.2s ease;
+      }
+      
+      .table-row-hover:hover {
+        background-color: #f9fafb;
+        transform: scale(1.005);
+      }
+    </style>
+  </head>
+  <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
+    <!-- Modern Header -->
+    <header class="bg-white border-b border-gray-200 shadow-sm fixed top-0 left-0 right-0 z-50">
+      <div class="px-6 py-4">
+        <div class="flex items-center justify-between">
+          <!-- Logo -->
+          <div class="flex items-center space-x-4">
+            <img
+              src="https://mentorwater.com/wp-content/uploads/2023/10/Mentor-Water-Pvt-Ltd-Logo-.png.webp"
+              alt="Water Mentor"
+              class="h-10"
+            />
+            <div class="hidden md:block w-px h-8 bg-gray-300"></div>
+            <h1 id="main-header-title" class="text-xl font-bold text-gray-900 hidden md:block">
+              Project Assignment Queue
+            </h1>
+          </div>
+
+          <!-- Logo 2 -->
+          <div class="flex items-center space-x-4">
+            <img
+              src="https://drive.google.com/thumbnail?id=1IFE2sSD_B6sA3AIE7i5_s0xw2XoNBV_F&sz=w1000"
+              alt="Logo"
+              class="h-10"
+            />
+          </div>
+
+          <!-- User Info & Logout -->
+          <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 rounded-xl border border-blue-100">
+              <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span id="userInfo" class="text-sm font-semibold text-gray-700">Loading...</span>
+            </div>
+            <button
+              id="logoutButton"
+              class="bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-semibold py-2 px-5 rounded-xl transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 flex items-center space-x-2"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span>Logout</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="pt-16">
+      <!-- Assignment Page -->
+      <div id="assignmentPage" class="px-6 py-6 max-w-[100rem] mx-auto">
+        <!-- Initial Loader -->
+        <div id="initialLoader" class="flex flex-col items-center justify-center py-20 fade-in">
+          <div class="spinner mb-6"></div>
+          <p class="text-gray-600 font-medium text-lg">Loading Pending Projects...</p>
+          <p class="text-gray-400 text-sm mt-2">Please wait while we fetch your data</p>
+        </div>
+
+        <!-- Filter Section -->
+        <div id="assignmentFilterContainer" class="hidden fade-in">
+          <div class="bg-white rounded-2xl shadow-md border border-gray-200 p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center space-x-2">
+                <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+                <h3 class="text-lg font-bold text-gray-900">Filters</h3>
+              </div>
+
+               <!-- ADDED: Toggle NR Button -->
+              <button
+                id="toggleNRBtn"
+                class="bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center space-x-2 border border-amber-200"
+                data-view="pending"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <span id="toggleNRBtnText">View NR Bucket</span>
+              </button>
+              
+              <button
+                id="clearAssignmentFiltersBtn"
+                class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center space-x-2"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>Clear All</span>
+              </button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="filtersGrid">
+              <!-- Filters will be inserted here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div id="assignmentTableContainer" class="hidden fade-in">
+          <!-- Table will be inserted here -->
+        </div>
+
+        <!-- Dashboard Buttons -->
+        <div id="dashboard-buttons-container" class="mt-4">
+          <div class="bg-white rounded-2xl shadow-md border border-gray-200 p-6">
+            <div class="flex items-center space-x-2 mb-6">
+              <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <h2 class="text-xl font-bold text-gray-900">Project Dashboards</h2>
+            </div>
+            <div id="bucketButtons" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              <!-- Buttons will be dynamically generated here -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PMS Dashboard Page -->
+      <div id="pmsPage" class="hidden">
+        <main class="px-6 py-6 max-w-[1600px] mx-auto">
+          <div id="dashboardView">
+            <!-- Dashboard content will be loaded here -->
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Generic Details Modal -->
+    <div
+      id="genericDetailsModal"
+      class="hidden fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-[70] transition-opacity duration-300"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col slide-in">
+        <div class="p-6 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+          <h3 id="genericModalTitle" class="text-2xl font-bold text-gray-900">Project Details</h3>
+          <button
+            id="closeGenericModalBtn"
+            class="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div id="genericModalContent" class="p-6 overflow-y-auto"></div>
+      </div>
+    </div>
+
+    <script>
+      const scriptUrl = "<?!= url ?>";
+      let currentBucket = "";
+      let assignmentData = { headers: [], rows: [] };
+      let momData = { headers: [], rows: [] };
+      let expenseData = { headers: [], rows: [] };
+      let projectPlanningData = { headers: [], rows: [] };
+      let inventoryData = { headers: [], rows: [] };
+      let taskProgressChartData = [];
+      let financeData = { headers: [], rows: [] };
+      let billingData = { headers: [], rows: [] };
+      let timelineModal, timelineModalContent, timelineModalTitle;
+      let kpiSection, heroSection, chartContainer;
+      let currentUserRole = "";
+      let customerIso = "";
+      let customerProjectName = "";
+      let currentQueueView = "pending"; // default view
+  
+
+      const assignmentPage = document.getElementById("assignmentPage");
+      const initialLoader = document.getElementById("initialLoader");
+      const assignmentFilterContainer = document.getElementById("assignmentFilterContainer");
+      const assignmentTableContainer = document.getElementById("assignmentTableContainer");
+      const pmsPage = document.getElementById("pmsPage");
+      const dashboardView = document.getElementById("dashboardView");
+      const genericDetailsModal = document.getElementById("genericDetailsModal");
+      const closeGenericModalBtn = document.getElementById("closeGenericModalBtn");
+      const genericModalTitle = document.getElementById("genericModalTitle");
+      const genericModalContent = document.getElementById("genericModalContent");
+      const userInfoDisplay = document.getElementById("userInfo");
+      const logoutButton = document.getElementById("logoutButton");
+
+      document.addEventListener("DOMContentLoaded", () => {
+        // HIDE EVERYTHING INITIALLY to prevent flashing
+        document.getElementById("assignmentPage").classList.add("hidden");
+        document.getElementById("pmsPage").classList.add("hidden");
+        
+        // Start the user check immediately
+        fetchAndDisplayUserInfo(); 
+      });
+      
+      function fetchAndDisplayUserInfo() {
+        google.script.run
+        .withSuccessHandler(function (user) {
+          if (user && user.username) {
+            const roleText = user.userRole ? ` (${user.userRole})` : "";
+            userInfoDisplay.textContent = `${user.username}${roleText}`;
+            
+            currentUserRole = user.userRole;
+            customerIso = user.assignedIso;
+
+            // === ROLE CHECK ===
+            if (currentUserRole === 'Customer') {
+              // --- CUSTOMER FLOW ---
+              // 1. Ensure Admin Queue is HIDDEN
+              document.getElementById("assignmentPage").classList.add("hidden");
+              
+              // 2. Hide the "Project Dashboards" title if it's visible in the header
+              // (Optional: You might want to change the header title immediately)
+              document.getElementById("main-header-title").textContent = "Customer Dashboard";
+
+              if (customerIso) {
+                  resolveCustomerProject(customerIso);
+              } else {
+                  // Fallback if no ISO assigned
+                  document.getElementById("pmsPage").classList.remove("hidden");
+                  dashboardView.innerHTML = '<div class="text-center p-10 text-red-500">No project assigned to your account.</div>';
+              }
+
+            } else {
+              // --- ADMIN/DOER FLOW ---
+              // Only NOW do we show the Admin Queue
+              document.getElementById("assignmentPage").classList.remove("hidden");
+              
+              // Load admin data
+              google.script.run.withSuccessHandler(displayAssignmentTable).getPendingProjects();
+              createDashboardButtons();
+            }
+          } else {
+            // Not logged in or session expired
+            window.top.location.href = scriptUrl; 
+          }
+        })
+        .withFailureHandler(function(error) {
+            console.error("User info fetch failed", error);
+            // Optional: Show a login button or error message on the blank screen
+        })
+        .getUserInfo();
+      }
+
+      function resolveCustomerProject(isoNo) {
+        // We have the ISO, but the dashboard needs the Project Name to load charts.
+        // We call the backend helper we created in Step 2.
+        google.script.run.withSuccessHandler(function(foundProjectName) {
+            if(foundProjectName) {
+                customerProjectName = foundProjectName;
+                handleCustomerView();
+            } else {
+                alert("Error: No project found matching your assigned ISO Number.");
+            }
+        }).getProjectNameFromIso(isoNo);
+      }
+
+      function handleCustomerView() {
+        // 1. Hide the Admin Queue
+        document.getElementById("assignmentPage").classList.add("hidden");
+        document.getElementById("main-header-title").textContent = "Customer Dashboard";
+        
+        // 2. Show the Dashboard Container
+        const pmsPage = document.getElementById("pmsPage");
+        pmsPage.classList.remove("hidden");
+        
+        // 3. Load the Dashboard HTML
+        const dashboardView = document.getElementById("dashboardView");
+        dashboardView.innerHTML = `<div class="flex flex-col items-center justify-center py-20"><div class="spinner mb-4"></div><p>Loading details for ISO: ${customerIso}...</p></div>`;
+        
+        loadPageContent("Dashboard", dashboardView);
+      }
+
+      function handleLogout() {
+        logoutButton.innerHTML = '<span class="loader inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span> Logging out...';
+        logoutButton.disabled = true;
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (result && result.success) {
+              window.top.location.href = scriptUrl;
+            } else {
+              alert("Logout failed. Please try again.");
+              logoutButton.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg><span>Logout</span>';
+              logoutButton.disabled = false;
+            }
+          })
+          .withFailureHandler(function (error) {
+            console.error("Logout error:", error);
+            alert("Logout failed. Please refresh the page.");
+            logoutButton.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg><span>Logout</span>';
+            logoutButton.disabled = false;
+          })
+          .logout();
+      }
+
+      function displayAssignmentTable(data) {
+        initialLoader.classList.add("hidden");
+        
+        // 1. Error handling check
+        if (!data || data[0][0] === "Error") {
+          const errorMessage = data && data.length > 1 ? data[1][0] : "Could not load pending projects.";
+          assignmentTableContainer.innerHTML = `<div class="bg-red-50 border-l-4 border-red-500 rounded-r-xl px-6 py-4 shadow-md"><p class="text-red-800 font-medium">${errorMessage}</p></div>`;
+          assignmentTableContainer.classList.remove("hidden");
+          return;
+        }
+
+        // 2. Store the headers and the master data list
+        assignmentData.headers = data.shift();
+        assignmentData.rows = data; 
+
+        // --- THE FIX ---
+        // Instead of assignmentData.filteredRows = [...data], which shows everything,
+        // we call applyAssignmentFilters(). This respects the default currentQueueView = "pending"
+        applyAssignmentFilters(); 
+
+        assignmentFilterContainer.classList.remove("hidden");
+        assignmentTableContainer.classList.remove("hidden");
+        
+        // Render the filter dropdowns (ISO, Client Name)
+        renderAssignmentFilters();
+        
+        // Note: We don't need to call renderAssignmentTable() here 
+        // because applyAssignmentFilters() already calls it.
+      }
+
+      function renderAssignmentFilters() {
+        const columnsToFilter = ["ISO No.", "Name of Client"];
+        const filtersGrid = document.getElementById("filtersGrid");
+        filtersGrid.innerHTML = "";
+
+        columnsToFilter.forEach((headerName) => {
+          const colIndex = assignmentData.headers.indexOf(headerName);
+          if (colIndex === -1) return;
+          const uniqueValues = [...new Set(assignmentData.rows.map((row) => row[colIndex]).filter(String))].sort();
+
+          const div = document.createElement("div");
+          div.className = "space-y-2";
+          div.innerHTML = `
+            <label class="block text-sm font-semibold text-gray-700">${headerName}</label>
+            <select class="assignment-filter-select w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white text-gray-900 font-medium" data-column="${headerName}">
+              <option value="">All ${headerName}</option>
+              ${uniqueValues.map((v) => `<option value="${v}">${v}</option>`).join("")}
+            </select>
+          `;
+          filtersGrid.appendChild(div);
+        });
+      }
+
+      function renderAssignmentTable() {
+        const columnsToShow = [
+          "ISO No.",
+          "Name of Client",
+          "Item",
+          "Status",
+          "Bucket",
+        ];
+        const columnIndices = columnsToShow.map((h) =>
+          assignmentData.headers.indexOf(h)
+        );
+        const bucketIndex = assignmentData.headers.indexOf("Bucket");
+        const bucketOptions = [
+          "Select a Bucket",
+          "STP CIVIL",
+          "STP PREFAB",
+          "ETP",
+          "STP JOHKASOU",
+          "JACCUZI",
+          "SWIMMING POOL",
+          "FOUNTAIN",
+          "WTP FRP",
+          "WTP MSEP",
+          "HEAT PUMP",
+          "RO",
+          "STP & ETP REVAMPING WORK",
+          "NR"
+        ];
+
+        let tableHtml = `
+          <div class="bg-white rounded-2xl shadow-md border border-gray-200 max-h-[50vh] overflow-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="sticky top-0">
+                  <tr>`;
+        
+        const headerStyle = 'class="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider" style="background-color: #263d60;"';
+
+        columnsToShow.forEach((header) => {
+          tableHtml += `<th ${headerStyle}>${header}</th>`;
+        });
+        tableHtml += `<th ${headerStyle}>Actions</th></tr></thead><tbody class="bg-white divide-y divide-gray-100">`;
+
+        if (assignmentData.filteredRows.length === 0) {
+          tableHtml += `<tr><td colspan="${columnsToShow.length + 1}" class="text-center py-12">...No Projects Found...</td></tr>`;
+        } else {
+          assignmentData.filteredRows.forEach((row) => {
+            const originalIndex = assignmentData.rows.indexOf(row);
+            tableHtml += `<tr id="assignment-row-${originalIndex}" class="table-row-hover">`;
+
+            columnIndices.forEach((index) => {
+              if (index === -1) {
+                tableHtml += `<td class="px-6 py-4 text-sm text-red-500 font-medium">Not Found</td>`;
+                return;
+              }
+
+              if (index === bucketIndex) {
+                // --- UPDATED LOGIC FOR NR PRE-FILL AND BLOCKING ---
+                const rowValue = (row[index] || "").toString().trim();
+                const isNRView = (currentQueueView === "nr");
+                
+                // Determine if dropdown should be disabled (Blocked)
+                const isDisabled = isNRView ? "disabled" : "";
+                const disabledClass = isNRView ? "bg-gray-100 cursor-not-allowed opacity-75" : "bg-white";
+
+                tableHtml += `<td class="px-6 py-4">
+                  <select class="bucket-select w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${disabledClass} text-sm font-medium" 
+                    data-row-index="${originalIndex}" 
+                    ${isDisabled}>
+                    ${bucketOptions.map((opt) => {
+                      // Check if this option should be selected
+                      const isSelected = (rowValue === opt) ? "selected" : "";
+                      return `<option value="${opt}" ${isSelected}>${opt}</option>`;
+                    }).join("")}
+                  </select>
+                </td>`;
+              } else {
+                // ... standard cell rendering ...
+                const cellData = row[index];
+                tableHtml += `<td class="px-6 py-4 text-sm text-gray-700 font-medium">${cellData}</td>`;
+              }
+            });
+
+            tableHtml += `<td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <button 
+                              class="view-assignment-details-btn text-white font-semibold py-2 px-4 rounded-lg" 
+                              style="background-color: #263d60;"
+                              data-row-index="${originalIndex}">
+                                View Details
+                            </button>
+                          </td></tr>`;
+          });
+        }
+        tableHtml += "</tbody></table></div>";
+        assignmentTableContainer.innerHTML = tableHtml;
+      }
+
+      function applyAssignmentFilters() {
+        const bucketIndex = assignmentData.headers.indexOf("Bucket");
+        const filters = Array.from(document.querySelectorAll(".assignment-filter-select"))
+          .map((sel) => ({ column: sel.dataset.column, value: sel.value }))
+          .filter((f) => f.value);
+
+        // Filter based on the Active View (Pending vs NR) AND the dropdown filters
+        assignmentData.filteredRows = assignmentData.rows.filter((row) => {
+          const bucketVal = (row[bucketIndex] || "").toString().trim();
+          
+          // 1. Check if row matches the current view (NR or Pending)
+          const matchesView = (currentQueueView === "nr") ? (bucketVal === "NR") : (bucketVal === "");
+          
+          if (!matchesView) return false;
+
+          // 2. Check if row matches dropdown filters
+          return filters.every((filter) => {
+            const colIndex = assignmentData.headers.indexOf(filter.column);
+            return colIndex !== -1 && (row[colIndex] || "").toString() === filter.value;
+          });
+        });
+
+        renderAssignmentTable();
+      }
+
+      logoutButton.addEventListener("click", handleLogout);
+
+      document.getElementById("assignmentPage").addEventListener("click", function (e) {
+        if (e.target.id === "clearAssignmentFiltersBtn") {
+          document.querySelectorAll(".assignment-filter-select").forEach((sel) => (sel.value = ""));
+          applyAssignmentFilters();
+        }
+
+        // Toggle between NR and Pending View
+        if (e.target.id === "toggleNRBtn" || e.target.closest("#toggleNRBtn")) {
+          const btn = document.getElementById("toggleNRBtn");
+          const btnText = document.getElementById("toggleNRBtnText");
+          const title = document.getElementById("main-header-title");
+
+          if (currentQueueView === "pending") {
+            currentQueueView = "nr";
+            btnText.textContent = "View Pending Queue";
+            title.textContent = "NR Bucket Queue";
+            btn.classList.replace("bg-amber-100", "bg-indigo-100");
+            btn.classList.replace("text-amber-800", "text-indigo-800");
+          } else {
+            currentQueueView = "pending";
+            btnText.textContent = "View NR Bucket";
+            title.textContent = "Project Assignment Queue";
+            btn.classList.replace("bg-indigo-100", "bg-amber-100");
+            btn.classList.replace("text-indigo-800", "text-amber-800");
+          }
+          applyAssignmentFilters();
+        }
+
+        if (e.target.classList.contains("view-assignment-details-btn")) {
+          const rowIndex = parseInt(e.target.dataset.rowIndex, 10);
+          const rowData = assignmentData.rows[rowIndex];
+          const headers = assignmentData.headers;
+          const clientNameIndex = headers.indexOf("Name of Client");
+          genericModalTitle.textContent = `Project Details: ${rowData[clientNameIndex] || "N/A"}`;
+
+          let html = '<dl class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+          headers.forEach((header, i) => {
+            html += `<div class="bg-gradient-to-br from-slate-50 to-blue-50 p-4 rounded-xl border border-slate-200"><dt class="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">${header}</dt><dd class="text-sm text-gray-900 font-semibold">${rowData[i] || "N/A"}</dd></div>`;
+          });
+          html += `</dl>`;
+
+          genericModalContent.innerHTML = html;
+          genericDetailsModal.classList.remove("hidden");
+        }
+      });
+
+      document.getElementById("assignmentPage").addEventListener("change", function (e) {
+        if (e.target.classList.contains("assignment-filter-select")) {
+          applyAssignmentFilters();
+        }
+
+        if (e.target.classList.contains("bucket-select")) {
+          const selectedBucket = e.target.value;
+          const originalRowIndex = parseInt(e.target.dataset.rowIndex, 10);
+          const isoNo = assignmentData.rows[originalRowIndex][assignmentData.headers.indexOf("ISO No.")];
+
+          if (selectedBucket === "Select a Bucket" || !isoNo) return;
+
+          e.target.disabled = true;
+          e.target.classList.add("opacity-50", "cursor-not-allowed");
+
+          google.script.run
+            .withSuccessHandler(function (response) {
+              if (response === "Success") {
+                // Update the local data array so the filter catches the change
+                const isoIdx = assignmentData.headers.indexOf("ISO No.");
+                const bIdx = assignmentData.headers.indexOf("Bucket");
+                const rowIndexInOriginal = assignmentData.rows.findIndex(r => r[isoIdx] === isoNo);
+                
+                if (rowIndexInOriginal > -1) {
+                  // Update the value in the local master list
+                  assignmentData.rows[rowIndexInOriginal][bIdx] = selectedBucket;
+                }
+                
+                // Refresh the table (this will now automatically hide the row if it 
+                // no longer matches the currentView)
+                applyAssignmentFilters();
+              } else {
+                alert("Error updating bucket: " + response);
+                e.target.value = "Select a Bucket";
+                e.target.disabled = false;
+                e.target.classList.remove("opacity-50", "cursor-not-allowed");
+              }
+            })
+            .updateProjectBucket(isoNo, selectedBucket);
+        }
+      });
+
+      function showDashboard(bucketName) {
+        document.getElementById("main-header-title").textContent = bucketName + " Dashboard";
+        currentBucket = bucketName;
+        assignmentPage.classList.add("hidden");
+        pmsPage.classList.remove("hidden");
+        dashboardView.innerHTML = `<div class="bg-white rounded-2xl p-12 shadow-xl border border-gray-200 flex flex-col items-center justify-center"><div class="spinner mb-4"></div><p class="text-gray-700 font-semibold text-lg">Loading ${bucketName} Dashboard...</p><p class="text-gray-400 text-sm mt-2">Please wait while we prepare your data</p></div>`;
+        loadPageContent("Dashboard", dashboardView);
+      }
+
+      function loadPageContent(pageName, targetContainer) {
+        google.script.run.withSuccessHandler((html) => {
+          targetContainer.innerHTML = html;
+          Array.from(targetContainer.getElementsByTagName("script")).forEach((oldScript) => {
+            const newScript = document.createElement("script");
+            Array.from(oldScript.attributes).forEach((attr) => newScript.setAttribute(attr.name, attr.value));
+            newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+          });
+
+          if (pageName === "Dashboard" && typeof initialLoad === "function") {
+            initialLoad();
+          }
+        }).include(pageName);
+      }
+
+      closeGenericModalBtn.addEventListener("click", () => genericDetailsModal.classList.add("hidden"));
+      genericDetailsModal.addEventListener("click", (e) => {
+        if (e.target === genericDetailsModal) genericDetailsModal.classList.add("hidden");
+      });
+
+      function createDashboardButtons() {
+        const buttonContainer = document.getElementById("bucketButtons");
+        if (!buttonContainer) return;
+        const buttons = ["STP CIVIL", "STP PREFAB", "ETP", "STP JOHKASOU", "JACCUZI", "SWIMMING POOL", "FOUNTAIN", "WTP FRP", "WTP MSEP", "HEAT PUMP", "RO", "STP & ETP REVAMPING WORK"];
+        
+        buttons.forEach((bucketName, index) => {
+          const button = document.createElement("button");
+          
+          button.className = `bucket-card text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2`;
+          
+          // We apply the background color and hover effects directly using JavaScript styles.
+          button.style.backgroundColor = '#263d60'; // Your desired blue
+          button.onmouseover = function() { this.style.backgroundColor = '#344955'; }; // Darker blue on hover
+          button.onmouseout = function() { this.style.backgroundColor = '#263d60'; };  // Return to original blue
+          
+          // The innerHTML with the SVG icon is preserved.
+          button.innerHTML = `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span>${bucketName}</span>
+          `;
+          button.addEventListener("click", () => showDashboard(bucketName));
+          buttonContainer.appendChild(button);
+        });
+      }
+
+      pmsPage.addEventListener("click", function (e) {
+        if (e.target.id === "dashboardExitBtn" || e.target.closest("#dashboardExitBtn")) {
+          document.getElementById("main-header-title").textContent = "Project Assignment Queue";
+          pmsPage.classList.add("hidden");
+          assignmentPage.classList.remove("hidden");
+          initialLoader.classList.remove("hidden");
+          assignmentTableContainer.classList.add("hidden");
+          assignmentFilterContainer.classList.add("hidden");
+          google.script.run.withSuccessHandler(displayAssignmentTable).getPendingProjects();
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,2961 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin: 0;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        color: #1f2937;
+      }
+
+      .sub-navbar {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        color: white;
+        padding: 16px 32px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .navbar-iso {
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      .container {
+        padding: 28px;
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      .hero-section {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        padding: 28px;
+        border-radius: 20px;
+        margin-bottom: 28px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .project-details {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 16px 24px;
+        align-items: center;
+        font-size: 1rem;
+      }
+
+      .project-details strong {
+        font-weight: 700;
+        color: #475569;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      #project-name {
+        width: 100%;
+        max-width: 500px;
+        padding: 12px 16px;
+        font-size: 1rem;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        font-weight: 600;
+        background: white;
+        transition: all 0.3s ease;
+      }
+
+      #project-name:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+
+      .chart-container {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        padding: 28px;
+        border-radius: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        margin-bottom: 28px;
+        overflow-x: auto;
+      }
+
+      .chart-container h2 {
+        color: #1e293b;
+        font-weight: 700;
+        margin-bottom: 20px;
+        font-size: 1.5rem;
+      }
+
+      /* D3 Chart Styles */
+      .bar {
+        fill: #3b82f6;
+        transition: all 0.2s ease;
+      }
+      .bar:hover {
+        opacity: 0.8;
+        filter: brightness(1.1);
+      }
+      .line {
+        fill: none;
+        stroke: #f59e0b;
+        stroke-width: 3px;
+      }
+      .axis-label, .tick text {
+        font-size: 12px;
+        font-family: 'Inter', sans-serif;
+      }
+      .grid-line {
+        stroke: #e5e7eb;
+        stroke-opacity: 0.7;
+        shape-rendering: crispEdges;
+      }
+
+      /* KPI Section */
+      .kpi-section {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 28px;
+      }
+
+      @media (max-width: 1280px) {
+        .kpi-section {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .kpi-tables, .kpi-info {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .kpi-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        overflow: hidden;
+        transition: all 0.3s ease;
+      }
+
+      .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      }
+
+      .kpi-card table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      .kpi-card th, .kpi-card td {
+        padding: 14px 16px;
+        text-align: center;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 0.875rem;
+      }
+
+      /* --- NEW RULE FOR MAIN CARD HEADERS --- */
+      .card-main-header th {
+        font-size: 1.15em;
+        padding: 12px 10px;
+        background-color: #263d60;
+        color: #ffffff;
+      }
+
+      .kpi-card th {
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .kpi-card td {
+        font-weight: 600;
+        color: #334155;
+        font-size: 1rem;
+      }
+
+      .kpi-info .info-card {
+        padding: 24px;
+      }
+
+      .info-card-2{
+        background-color: #263d60;
+        color: #ffffff;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 12px;
+        margin-bottom: 16px;
+        text-align: center;
+        padding-top: 14px;
+        border-radius: 14px;
+        font-size: 1.15em;
+      }
+
+      .info-item {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 14px;
+        font-size: 1rem;
+        padding: 12px 0;
+        border-bottom: 1px solid #f1f5f9;
+      }
+
+      .info-item:last-child {
+        border-bottom: none;
+      }
+
+      .info-item span {
+        color: #64748b;
+        font-weight: 500;
+      }
+
+      .info-item strong {
+        font-weight: 700;
+        color: #1e293b;
+      }
+
+      .info-item a {
+        color: #3b82f6;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .info-item a:hover {
+        color: #2563eb;
+        text-decoration: underline;
+      }
+
+      .donut-charts {
+        display: flex;
+        justify-content: space-around;
+        text-align: center;
+        padding: 20px 0;
+      }
+
+      .donut-chart-container h4 {
+        margin-top: 12px;
+        font-weight: 600;
+        color: #475569;
+        font-size: 0.875rem;
+      }
+
+      .payment-terms-table {
+        font-size: 0.875rem;
+      }
+
+      .payment-terms-table td {
+        padding: 12px 16px;
+        border-bottom: 1px solid #f1f5f9;
+      }
+
+      .payment-terms-table td:first-child {
+        color: #64748b;
+        font-weight: 500;
+      }
+
+      .payment-terms-table td:last-child {
+        text-align: right;
+        font-weight: 700;
+        color: #1e293b;
+      }
+
+      .payment-terms-table th {
+        font-weight: 700;
+        padding: 14px 16px;
+        text-align: left;
+        font-size: 1rem;
+      }
+      .payment-terms-table thead{
+        font-size: 1.15em;
+        background-color: #263d60;
+        color: #ffffff;
+      }
+
+      /* Tooltip */
+      .tooltip {
+        position: absolute;
+        text-align: left;
+        padding: 12px 16px;
+        font: 13px 'Inter', sans-serif;
+        background: rgba(15, 23, 42, 0.95);
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
+      }
+
+      .truncate-cell {
+        max-width: 250px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        position: relative;
+      }
+
+      /* Modern Button Styles */
+      .btn-primary {
+        background: #263d60;
+        color: white;
+        font-weight: 600;
+        padding: 10px 20px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+      }
+
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4);
+      }
+
+      /* Modal Improvements */
+      .modal-backdrop {
+        backdrop-filter: blur(4px);
+      }
+
+      /* Exit Button */
+      #dashboardExitBtn {
+        background: #1c2d48;
+        border: 2px ridge #ffffff;
+        color: white;
+        font-size: 1rem;
+        cursor: pointer;
+        line-height: 1;
+        padding: 8px 16px;
+        border-radius: 12px;
+        transition : all 0.3s ease;
+        box-shadow: 0 4px 2px -1px rgba(59, 130, 246, 0.3);
+      }
+
+      #dashboardExitBtn:hover {
+        background: #283445;
+        transform: translateY(-2px);
+        box-shadow: 0 7px 7px -3px rgb(138 149 167 / 40%);
+      }
+
+      .headerCss{
+        background : #cbcbcb;
+        color: #ffffff;
+        border-radius: 14px;
+      }
+
+      /* Animations */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .fade-in {
+        animation: fadeIn 0.4s ease-out;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tooltip"></div>
+
+    <div class="sub-navbar">
+      <div class="navbar-iso">
+        <svg class="inline-block w-5 h-5 mr-2 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        ISO NO: <span id="iso-no" class="font-bold">-</span>
+      </div>
+
+      <!-- Added 'hidden' class here so it is invisible by default -->
+      <button id="dashboardExitBtn" class="hidden flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg border border-white/30 transition-all text-sm font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          Go Home
+      </button>
+    </div>
+
+    <div class="container fade-in">
+      <!-- Hero Section -->
+      <div class="hero-section">
+        <div class="project-details">
+          <strong>Project Name:</strong>
+          <select id="project-name" onchange="onProjectChange()">
+            <option>Loading projects...</option>
+          </select>
+          <strong>Address:</strong>
+          <span id="project-add" class="text-gray-900 font-semibold">-</span>
+          <strong>Contact Person:</strong>
+          <span id="contact-person" class="text-gray-900 font-semibold">-</span>
+          <strong>Product:</strong>
+          <span id="item" class="text-gray-900 font-semibold">-</span>
+          <strong>MOM Details:</strong>
+          <button
+            id="mom-details-btn"
+            class="btn-primary text-sm"
+          >
+            <svg class="inline-block w-4 h-4 mr-2 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            View Minutes of Meeting
+          </button>
+        </div>
+      </div>
+
+      <!-- Project Timeline Chart -->
+      <div class="chart-container">
+        <h2
+          id="project-timeline-header"
+          style="cursor: pointer; transition: all 0.2s ease;"
+          onmouseover="this.style.color='#3b82f6'"
+          onmouseout="this.style.color='#1e293b'"
+        >
+          <svg class="inline-block w-6 h-6 mr-2 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Project Timeline
+        </h2>
+        <div id="chart_div"></div>
+      </div>
+
+      <!-- Milestone Progress Chart -->
+      <div class="chart-container">
+        <h2>
+          <svg class="inline-block w-6 h-6 mr-2 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          Milestone Progress vs. Billing Status
+        </h2>
+        <div id="task_status_chart_div"></div>
+      </div>
+
+      <!-- KPI Dashboard Section -->
+      <div class="kpi-section">
+        <div class="kpi-tables">
+
+          <!-- Till Date Updated -->
+          <div id="card-expenses" class="kpi-card">
+            <table>
+              <thead class="card-main-header headerCss">
+                <tr><th colspan="3">Till Date Updated (₹)</th></tr>
+              </thead>
+              <tbody>
+                <tr> 
+                  <th id="expenses-header" style="cursor: pointer;">Expences (Rs.)</th> 
+                  <th id="manpower-used-header" style="cursor: pointer;">Manpower Used (Rs.)</th> 
+                  <th id="product-used-header" style="cursor: pointer;">Product Used (Rs.)</th> 
+                </tr>
+                <tr> 
+                  <td id="kpi-expenses" style="cursor: pointer;">0</td> 
+                  <td id="kpi-manpower-rs" style="cursor: pointer;">0</td> 
+                  <td id="kpi-product-rs" style="cursor: pointer;">0</td> 
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Product Status -->
+          <div id="card-product" class="kpi-card">
+            <table>
+              <thead class="card-main-header headerCss">
+                <tr>
+                  <th id="product-status-header" colspan="4"style="cursor: pointer">
+                    <svg class="inline-block w-4 h-4 mr-1 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                    </svg>
+                    Product (Qty) Status Till Date
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th id="planned-indent-header" style="cursor: pointer">Indent Planned</th>
+                  <th id="actual-indent-header" style="cursor: pointer">Actual Indent</th>
+                  <th id="received-header" style="cursor: pointer">Received</th>
+                  <th id="used-header" style="cursor: pointer">Used</th>
+                </tr>
+                <tr>
+                  <td id="kpi-indent-planned" style="cursor: pointer">0</td>
+                  <td id="kpi-actual-indent" style="cursor: pointer">0</td>
+                  <td id="kpi-received" style="cursor: pointer">0</td>
+                  <td id="kpi-used" style="cursor: pointer">0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Manpower & Engineer -->
+          <div id="card-manpower" class="kpi-card">
+            <table>
+              <thead class="card-main-header headerCss">
+                <tr>
+                  <th id="manpower-header" colspan="3" style="cursor: pointer">
+                    <svg class="inline-block w-4 h-4 mr-1 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    Manpower (Man-Hrs) Used
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th id="eng-worked-header" style="cursor: pointer">Eng. Worked</th>
+                  <th id="planned-hrs-header" style="cursor: pointer">Planned Man-Hrs</th>
+                  <th id="actual-hrs-header" style="cursor: pointer">Actual Man-Hrs</th>
+                </tr>
+                <tr>
+                  <td id="kpi-eng-worked" style="cursor: pointer">0</td>
+                  <td id="kpi-planned-hrs" style="cursor: pointer">0</td>
+                  <td id="kpi-actual-hrs" style="cursor: pointer">0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Audit Completed -->
+          <div class="kpi-card">
+            <table>
+              <thead class="card-main-header headerCss">
+                <tr>
+                  <th colspan="3">
+                    <svg class="inline-block w-4 h-4 mr-1 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    Audit Completed (Deviation)
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th id="audit-manpower-header" style="cursor: pointer">Manpower</th>
+                  <th id="audit-product-header" style="cursor: pointer">Product</th>
+                  <th id="audit-drawings-header" style="cursor: pointer">Drawings</th>
+                </tr>
+                <tr>
+                  <td id="kpi-audit-manpower" style="cursor: pointer">0</td>
+                  <td id="kpi-audit-product" style="cursor: pointer">0</td>
+                  <td id="kpi-audit-drawings" style="cursor: pointer">0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Milestone Summary -->
+          <div class="kpi-card">
+            <table>
+              <thead class="card-main-header headerCss">
+                <tr>
+                  <th id="milestone-summary-header" colspan="4" style="cursor: pointer">
+                    <svg class="inline-block w-4 h-4 mr-1 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    Milestone Summary
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th id="total-milestones-header" style="cursor: pointer">Total Milestones</th>
+                  <th id="completed-milestones-header" style="cursor: pointer">Completed</th>
+                  <th id="pending-milestones-header" style="cursor: pointer">Pending</th>
+                  <th id="milestone-percent-header" style="cursor: pointer">Total Done (%)</th>
+                </tr>
+                <tr>
+                  <td id="kpi-total-milestones" style="cursor: pointer">0</td>
+                  <td id="kpi-completed-milestones" style="cursor: pointer">0</td>
+                  <td id="kpi-pending-milestones" style="cursor: pointer">0</td>
+                  <td id="kpi-milestone-percent" style="cursor: pointer">0%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Task Status -->
+          <div id="card-task-status" class="kpi-card">
+            <table>
+              <thead class="card-main-header headerCss">
+                <tr>
+                  <th id="task-status-header" colspan="4" style="cursor: pointer">
+                    <svg class="inline-block w-4 h-4 mr-1 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                    Task Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th id="total-tasks-header" style="cursor: pointer">Total Tasks</th>
+                  <th id="done-tasks-header" style="cursor: pointer">Done</th>
+                  <th id="inprogress-tasks-header" style="cursor: pointer">In-Progress</th>
+                  <th id="hold-tasks-header" style="cursor: pointer">Hold</th>
+                </tr>
+                <tr>
+                  <td id="kpi-total-tasks" style="cursor: pointer">0</td>
+                  <td id="kpi-tasks-done" style="cursor: pointer">0</td>
+                  <td id="kpi-tasks-inprogress" style="cursor: pointer">0</td>
+                  <td id="kpi-tasks-hold" style="cursor: pointer">0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Billing FMS -->
+          <div class="kpi-card">
+            <table>
+              <thead class="card-main-header headerCss">
+                <tr>
+                  <th id="billing-fms-header" colspan="3" style="cursor: pointer">
+                    <svg class="inline-block w-4 h-4 mr-1 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    Billing Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th id="billing-milestones-header" style="cursor: pointer; text-align: left">Milestone</th>
+                  <th id="billing-done-header" style="cursor: pointer">Billing Done (%)</th>
+                  <th id="billing-pending-header" style="cursor: pointer">Bill Pending (%)</th>
+                </tr>
+                <tr>
+                  <td id="kpi-billing-milestones" style="cursor: pointer; text-align: left">0</td>
+                  <td id="kpi-billing-done" style="cursor: pointer">0%</td>
+                  <td id="kpi-billing-pending" style="cursor: pointer">0%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Right Column: Project Info & Charts -->
+        <div class="kpi-info">
+          <!-- Project Info Card -->
+          <div class="kpi-card info-card">
+            <div class="info-card-2">
+              <h3 style="font-weight: 700; font-size: 1.125rem;" >
+                <svg class="inline-block w-5 h-5 mr-2 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Project Information
+              </h3>
+            </div>
+            <div class="info-item">
+              <span>Order Amount:</span>
+              <strong id="kpi-order-amount">0 + GST</strong>
+            </div>
+            <div id="info-profit-loss" class="info-item">
+              <span>Profit / Loss:</span>
+              <strong id="kpi-profit-loss">0</strong>
+            </div>
+            <div class="info-item">
+              <span>Project Manager:</span>
+              <strong id="kpi-proj-manager">N/A</strong>
+            </div>
+            <div class="info-item">
+              <span>Site Incharge:</span>
+              <strong id="kpi-site-incharge">N/A</strong>
+            </div>
+            <div class="info-item">
+              <span>PO Copy:</span>
+              <a id="kpi-po-copy" href="#" target="_blank">
+                <svg class="inline-block w-4 h-4 mr-1 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                View Document
+              </a>
+            </div>
+          </div>
+
+          <!-- Donut Chart Card -->
+          <div class="kpi-card info-card">
+            <div class="info-card-2">
+              <h3 style="font-weight: 700; font-size: 1.125rem;">
+                <svg class="inline-block w-5 h-5 mr-2 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                </svg>
+                Financial Overview
+              </h3>
+            </div>
+            <div class="donut-charts">
+              <div id="payment-chart-container" class="donut-chart-container" style="cursor: pointer">
+                <div id="payment-chart"></div>
+                <h4>Payment Received %</h4>
+              </div>
+            </div>
+          </div>
+
+          <!-- Payment Terms Card -->
+          <div id="payment-terms-card" class="kpi-card info-card" style="cursor: pointer">
+            <table class="payment-terms-table">
+              <thead class="headerCss">
+                <tr>
+                  <th colspan="2" style="text-align: center; padding-top: 14px; border-radius: 14px;">
+                    <svg class="inline-block w-5 h-5 mr-2 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    Payment Terms
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Advance</td>
+                  <td id="pay-advance">0%</td>
+                </tr>
+                <tr>
+                  <td>Against PI</td>
+                  <td id="pay-pi">0%</td>
+                </tr>
+                <tr>
+                  <td>Installation & Testing</td>
+                  <td id="pay-install">0%</td>
+                </tr>
+                <tr>
+                  <td>Commissioning + Handing Over</td>
+                  <td id="pay-commission">0%</td>
+                </tr>
+                <tr>
+                  <td>Security Amount</td>
+                  <td id="pay-security">0%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timeline Modal -->
+      <div id="timelineModal" class="hidden fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-[70] modal-backdrop">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+          <div class="p-6 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+            <h3 id="timelineModalTitle" class="text-2xl font-bold text-gray-900">Details</h3>
+            <button id="closeTimelineModalBtn" class="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div id="timelineModalContent" class="p-6 overflow-auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", initialLoad);
+
+      /**
+       * Helper to get the project name safely.
+       * Returns null if the project is still loading or invalid.
+       */
+      function getSafeProjectName() {
+        const select = document.getElementById('project-name');
+        const val = select ? select.value : null;
+        
+        // Check for invalid states
+        if (!val || val === 'Loading projects...' || val.startsWith('No ')) {
+            // Optional: You can alert the user or just silently return
+            console.log("Project data not ready yet.");
+            return null;
+        }
+        return val;
+      }
+
+
+
+
+      function initialLoad() {
+        // 1. Assign Global Elements (Declared in Index.html)
+        timelineModal = document.getElementById("timelineModal");
+        timelineModalContent = document.getElementById("timelineModalContent");
+        timelineModalTitle = document.getElementById("timelineModalTitle");
+        kpiSection = document.querySelector(".kpi-section");
+        heroSection = document.querySelector(".hero-section");
+        chartContainer = document.getElementById('chart_div').parentElement;
+
+        // 2. Determine Dashboard Mode (Admin vs. Customer)
+        // 'currentUserRole' and 'customerProjectName' are set in Index.html before loading this dashboard.
+        
+        if (typeof currentUserRole !== 'undefined' && currentUserRole === 'Customer') {
+            // --- CUSTOMER MODE ---
+            // Hide restricted elements immediately
+            applyCustomerRestrictions();
+            
+            // Populate dropdown with only their project and lock it
+            const select = document.getElementById('project-name');
+            if (typeof customerProjectName !== 'undefined' && customerProjectName) {
+                select.innerHTML = `<option value="${customerProjectName}">${customerProjectName}</option>`;
+                select.disabled = true;
+                // Load dashboard data for this customer project
+                updateDashboard(customerProjectName);
+            } else {
+                select.innerHTML = '<option>Error: No project assigned.</option>';
+            }
+
+        } else {
+            // --- ADMIN/DOER MODE ---
+
+            // NEW CODE: Restrict Task Status to Admin Only
+            if (typeof currentUserRole !== 'undefined' && currentUserRole.toLowerCase() !== 'admin') {
+                const taskStatusCard = document.getElementById('card-task-status');
+                if (taskStatusCard) taskStatusCard.style.display = 'none';
+            }
+
+            // 1. SHOW THE GO HOME BUTTON (This was missing)
+            const exitBtn = document.getElementById('dashboardExitBtn');
+            if (exitBtn) exitBtn.classList.remove('hidden'); 
+
+            // Standard behavior: populate dropdown based on selected bucket
+            if (typeof currentBucket !== 'undefined' && currentBucket) {
+                google.script.run.withSuccessHandler(populateProjectDropdown).getProjectNamesByBucket(currentBucket);
+            } else {
+                document.getElementById('project-name').innerHTML = '<option>No bucket selected.</option>';
+            }
+        }
+
+        // 3. Consolidated Event Handling (Delegation)
+        // This handles all clicks on the dashboard efficiently
+        document.querySelector(".container").addEventListener("click", function (event) {
+          const target = event.target;
+          const targetId = target.id;
+
+          // Direct Actions
+          if (targetId === "mom-details-btn") openMomModal(event);
+          if (targetId === "project-timeline-header") openTimelineModal(event);
+          if (targetId === "task-progress-header") openTaskProgressModal(event);
+          if (targetId === "payment-chart-container") openFinanceModal(event);
+
+          // Card-Based Actions
+          const kpiCard = target.closest(".kpi-card");
+          if (kpiCard) {
+            // Special case for Payment Terms (whole card clickable)
+            if (kpiCard.id === "payment-terms-card") {
+              openProjectDetailsModal(event);
+              return;
+            }
+            // Granular clicks for other cards
+            switch (targetId) {
+              // Manpower
+              case "manpower-header":         openProjectPlanningModal(event); break;
+              case "eng-worked-header":
+              case "kpi-eng-worked":          openEngWorkedModal(event); break;
+              case "planned-hrs-header":
+              case "kpi-planned-hrs":         openPlannedHrsModal(event); break;
+              case "actual-hrs-header":
+              case "kpi-actual-hrs":          openActualHrsModal(event); break;
+
+              // Product Status
+              case "product-status-header":   openInventoryModal(event); break;
+              case "planned-indent-header":
+              case "kpi-indent-planned":      openPlannedIndentModal(event); break;
+              case "actual-indent-header":
+              case "kpi-actual-indent":       openActualIndentModal(event); break;
+              case "received-header":
+              case "kpi-received":            openReceivedModal(event); break;
+              case "used-header":
+              case "kpi-used":                openUsedModal(event); break;
+
+              // Till Date Updated
+              case "expenses-header":
+              case "kpi-expenses":            openExpenseDetailsModal(event); break;
+              case "manpower-used-header":
+              case "kpi-manpower-rs":         openManpowerCostModal(event); break;
+              case "product-used-header":
+              case "kpi-product-rs":          openProductUsedModal(event); break;
+
+              // Task Status
+              case "task-status-header":
+              case "total-tasks-header":
+              case "kpi-total-tasks":         openProjectPlanningModal(event); break;
+              case "done-tasks-header":
+              case "kpi-tasks-done":          openDoneTasksModal(event); break;
+              case "inprogress-tasks-header":
+              case "kpi-tasks-inprogress":    openInProgressTasksModal(event); break;
+              case "hold-tasks-header":
+              case "kpi-tasks-hold":          openHoldTasksModal(event); break;
+
+              // Milestone Summary
+              case "milestone-summary-header":
+              case "total-milestones-header":
+              case "kpi-total-milestones":      openMilestoneDetailsModal(event); break;
+              case "completed-milestones-header":
+              case "kpi-completed-milestones":  openCompletedMilestonesModal(event); break;
+              case "pending-milestones-header":
+              case "kpi-pending-milestones":    openPendingMilestonesModal(event); break;
+
+              // Billing FMS
+              case "billing-fms-header":
+              case "billing-milestones-header":
+              case "kpi-billing-milestones":    openBillingModal(event); break;
+              case "billing-done-header":
+              case "kpi-billing-done":          openBillingDoneModal(event); break;
+              case "billing-pending-header":
+              case "kpi-billing-pending":       openBillingPendingModal(event); break;
+
+              // Audit
+              case "audit-manpower-header":
+              case "kpi-audit-manpower":      openAuditManpowerModal(event); break;
+              case "audit-product-header":
+              case "kpi-audit-product":       openAuditItemModal(event); break;
+              case "audit-drawings-header":
+              case "kpi-audit-drawings":      openAuditDrawingModal(event); break;
+            }
+          }
+        });
+
+        // 4. Modal Event Listeners (Backdrop & Content Delegation)
+        document.getElementById("closeTimelineModalBtn").addEventListener("click", () => timelineModal.classList.add("hidden"));
+        
+        timelineModal.addEventListener("click", (e) => {
+          if (e.target === timelineModal) {
+            timelineModal.classList.add("hidden");
+          }
+        });
+
+        timelineModalContent.addEventListener("click", function (event) {
+          const target = event.target;
+          const rowIndex = target.dataset.rowIndex;
+
+          // Task Views
+          if (target.classList.contains("view-task-details-btn")) { showTaskDetails(rowIndex); }
+          if (target.id === "back-to-summary-btn") { renderProjectPlanningTable(projectPlanningData); }
+          
+          // MOM Views
+          if (target.classList.contains("view-mom-details-btn")) { showMomDetails(rowIndex); }
+          if (target.id === "back-to-mom-summary-btn") { renderMomView(momData); }
+          
+          // Expense Views
+          if (target.classList.contains("view-expense-details-btn")) { showExpenseDetails(rowIndex); }
+          if (target.id === 'back-to-expense-summary-btn'){ renderExpenseView(expenseData); }
+          
+          // Inventory Views
+          if (target.classList.contains("view-inventory-details-btn")) { showInventoryDetails(rowIndex); }
+          if (target.id === "back-to-inventory-summary-btn") { renderInventorySummaryView(inventoryData); }
+          
+          // Finance Views
+          if (target.classList.contains("view-finance-details-btn")) { showFinanceDetails(rowIndex); }
+          if (target.id === "back-to-finance-summary-btn") { renderFinanceSummaryView(financeData); }
+          
+          // Billing Views
+          if (target.classList.contains("view-billing-details-btn")) { showBillingDetails(rowIndex); }
+          if (target.id === "back-to-billing-summary-btn") { renderBillingSummaryView(billingData); }
+          
+          // Task Progress Chart Views
+          if (target.classList.contains("view-task-progress-details-btn")) { showTaskProgressDetails(rowIndex); }
+          if (target.id === "back-to-task-progress-summary-btn") { renderTaskProgressSummaryView(projectPlanningData); }
+        });
+      }
+
+      function populateProjectDropdown(projectNames) {
+        const select = document.getElementById("project-name");
+        select.innerHTML = "";
+        if (!projectNames || projectNames.length === 0) {
+          select.innerHTML = "<option>No projects found</option>";
+          return;
+        }
+        projectNames.forEach((name) => {
+          select.innerHTML += `<option value="${name}">${name}</option>`;
+        });
+        updateDashboard(projectNames[0]);
+      }
+
+      function onProjectChange() {
+        updateDashboard(document.getElementById("project-name").value);
+      }
+
+      function updateDashboard(projectName) {
+        // 1. Show loading spinners for CHARTS
+        document.getElementById('chart_div').innerHTML = '<div class="flex flex-col items-center justify-center h-64"><div class="spinner mb-2"></div><p class="text-sm text-gray-500">Loading Timeline...</p></div>';
+        document.getElementById('task_status_chart_div').innerHTML = '<div class="flex flex-col items-center justify-center h-64"><div class="spinner mb-2"></div><p class="text-sm text-gray-500">Loading Progress...</p></div>';
+        document.getElementById('payment-chart').innerHTML = '<div class="flex items-center justify-center h-32"><div class="spinner"></div></div>';
+        
+        // 2. Show loading spinners for KPI CARDS (New)
+        setKpiLoadingState();
+
+        // 3. Make ONE single call to the server
+        google.script.run
+          .withSuccessHandler(function(data) {
+            
+            if (!data || data.error) {
+               console.error("Data load error", data ? data.error : "Unknown");
+               alert("Failed to load project data.");
+               return;
+            }
+
+            // A. Store MOM Data Globally (THIS IS NEW)
+            momData = data.momData || { headers: [], rows: [] };
+
+            // B. Update Hero Section
+            updateProjectDetails(data.details);
+
+            // C. Update KPI Cards
+            updateKpiDashboard(data.kpis);
+
+            // C. Draw Charts
+            if (data.details && data.details.isoNo) {
+                drawD3Chart(data.timelineChart);
+                drawMilestoneComboChart(data.milestoneChart);
+            } else {
+                document.getElementById('chart_div').innerHTML = '<h3 class="text-center p-10 text-gray-500">ISO No. not found.</h3>';
+                document.getElementById('task_status_chart_div').innerHTML = '<h3 class="text-center p-10 text-gray-500">ISO No. not found.</h3>';
+            }
+
+          })
+          .getAllDashboardData(projectName);
+      }
+
+      /**
+       * Safely updates project details.
+       * Checks if the element exists before trying to set textContent.
+       */
+      function updateProjectDetails(details) {
+        if (details) {
+          // Helper function to safely update an element if it exists
+          const safeUpdate = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) {
+              el.textContent = value || "N/A";
+            }
+          };
+
+          // Update the elements using the safe helper
+          safeUpdate("iso-no", details.isoNo);
+          safeUpdate("project-add", details.projectAdd);
+          safeUpdate("contact-person", details.contactPerson);
+          safeUpdate("item", details.item);
+        }
+      }
+
+      function openTimelineModal() {
+        const projectName = document.getElementById("project-name").value;
+        if (!projectName) {
+          alert("Please select a project first.");
+          return;
+        }
+        timelineModalTitle.textContent = `Timeline Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div><p class="text-gray-600">Loading details...</p></div>';
+        timelineModal.classList.remove("hidden");
+        google.script.run.withSuccessHandler(renderTimelineTable).getWbsDataForProject(projectName);
+      }
+
+      function renderTimelineTable(data) {
+        if (data.error) {
+          timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+          return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+          timelineModalContent.innerHTML = '<p class="text-gray-600">No timeline data found for this project.</p>';
+          return;
+        }
+
+        const { headers, rows } = data;
+        const requiredHeaders = ["UNIQUE ID", "MILESTONE/BOQ ITEM", "BOQ Item", "QTY", "PRECEDING WORK", "TIME REQ.-DAYS", "Engineer Name", "PLANNED START DATE", "ACTUAL END DATE", "Delay"];
+        const headerIndexMap = requiredHeaders.map((reqHeader) => {
+          const index = headers.findIndex((h) => h.trim().toUpperCase() === reqHeader.trim().toUpperCase());
+          return { name: reqHeader, index: index };
+        });
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200">';
+        tableHtml += '<thead class="headerCss"><tr>';
+        headerIndexMap.forEach((h) => {
+          tableHtml += `<th scope="col" class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">${h.name}</th>`;
+        });
+        tableHtml += "</tr></thead>";
+        tableHtml += '<tbody class="bg-white divide-y divide-gray-100">';
+        rows.forEach((row) => {
+          tableHtml += "<tr class='hover:bg-gray-50 transition-colors'>";
+          headerIndexMap.forEach((h) => {
+            const cellData = h.index !== -1 && row[h.index] !== undefined ? row[h.index] : "N/A";
+            if (h.name === "MILESTONE/BOQ ITEM" || h.name === "TASK NAME" || h.name === "BOQ Item") {
+              tableHtml += `<td class="px-6 py-4 text-sm text-gray-700 truncate-cell" title="${cellData}">${cellData}</td>`;
+            } else {
+              tableHtml += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">${cellData}</td>`;
+            }
+          });
+          tableHtml += "</tr>";
+        });
+        tableHtml += "</tbody></table></div>";
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      // Keep all other existing functions exactly as they are in the original Dashboard.html
+      // (All the modal functions, data rendering functions, etc.)
+      
+      function openProjectPlanningModal() {
+        const projectName = document.getElementById("project-name").value;
+        if (!projectName) {
+          alert("Please select a project first.");
+          return;
+        }
+        timelineModalTitle.textContent = `Manpower & Engineer Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div><p class="text-gray-600">Loading details...</p></div>';
+        timelineModal.classList.remove("hidden");
+        google.script.run.withSuccessHandler(renderProjectPlanningTable).getProjectPlanningData(projectName);
+      }
+
+      function renderProjectPlanningTable(data) {
+        projectPlanningData = data;
+        if (data.error) {
+          timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+          return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+          let message = "No tasks found for this project or filter.";
+          if (timelineModalTitle.textContent.includes("Completed")) {
+            message = "No tasks have been completed for this project yet.";
+          } else if (timelineModalTitle.textContent.includes("Pending")) {
+            message = "There are no pending tasks for this project.";
+          }
+          timelineModalContent.innerHTML = `<p class="text-gray-600">${message}</p>`;
+          return;
+        }
+
+        const { headers, rows } = data;
+        const requiredHeaders = ["Milestone", "Task", "Status", "Engineer Name (Doer)", "Remarks"];
+        const headerIndexMap = requiredHeaders.map((reqHeader) => {
+          const index = headers.findIndex((h) => h.trim().toUpperCase() === reqHeader.trim().toUpperCase());
+          return { name: reqHeader, index: index };
+        });
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200">';
+        tableHtml += '<thead class="headerCss"><tr>';
+        requiredHeaders.forEach((h) => {
+          tableHtml += `<th scope="col" class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">${h}</th>`;
+        });
+        tableHtml += `<th scope="col" class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Action</th>`;
+        tableHtml += "</tr></thead>";
+        tableHtml += '<tbody class="bg-white divide-y divide-gray-100">';
+        rows.forEach((row, index) => {
+          tableHtml += "<tr class='hover:bg-gray-50 transition-colors'>";
+          headerIndexMap.forEach((h) => {
+            const cellData = h.index !== -1 && row[h.index] !== undefined ? row[h.index] : "N/A";
+            if (h.name === "Task" || h.name === "Remarks") {
+              tableHtml += `<td class="px-6 py-4 text-sm text-gray-700 truncate-cell" title="${cellData}">${cellData}</td>`;
+            } else {
+              tableHtml += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">${cellData}</td>`;
+            }
+          });
+          tableHtml += `<td class="px-6 py-4 whitespace-nowrap text-sm">
+                          <button class="view-task-details-btn btn-primary py-1 px-3 rounded-lg text-xs" data-row-index="${index}">View</button>
+                         </td>`;
+          tableHtml += "</tr>";
+        });
+        tableHtml += "</tbody></table></div>";
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      function showTaskDetails(rowIndex) {
+        const { headers, rows } = projectPlanningData;
+        const taskData = rows[rowIndex];
+
+        let detailHtml = `
+          <div class="mb-4">
+            <button id="back-to-summary-btn" class="bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200">← Back to Summary</button>
+          </div>
+          <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`;
+
+        headers.forEach((header, i) => {
+          let cellData = taskData[i] || "N/A";
+          if (header === "Photo" && cellData.startsWith("http")) {
+            cellData = `<a href="${cellData}" target="_blank" class="text-blue-600 hover:underline font-semibold">View Photo</a>`;
+          }
+          detailHtml += `
+              <div class="bg-gradient-to-br from-slate-50 to-blue-50 p-4 rounded-xl border border-slate-200">
+                <dt class="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1">${header}</dt>
+                <dd class="text-sm text-gray-900 font-semibold">${cellData}</dd>
+              </div>`;
+        });
+
+        detailHtml += `</dl>`;
+        timelineModalContent.innerHTML = detailHtml;
+      }
+
+      function openDoneTasksModal(event) {
+        event.stopPropagation();
+        const projectName = document.getElementById("project-name").value;
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Completed Tasks for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div></div>';
+        timelineModal.classList.remove("hidden");
+        google.script.run.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "DONE");
+      }
+
+      function openInProgressTasksModal(event) {
+        event.stopPropagation();
+        const projectName = document.getElementById("project-name").value;
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `In-Progress Tasks for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div></div>';
+        timelineModal.classList.remove("hidden");
+        google.script.run.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "IN-PROGRESS");
+      }
+
+      function openHoldTasksModal(event) {
+        event.stopPropagation();
+        const projectName = document.getElementById("project-name").value;
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `On-Hold Tasks for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div></div>';
+        timelineModal.classList.remove("hidden");
+        google.script.run.withSuccessHandler(renderProjectPlanningTable).getFilteredTasks(projectName, "HOLD");
+      }
+
+      function openEngWorkedModal(event) {
+        event.stopPropagation();
+        const projectName = document.getElementById("project-name").value;
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Engineer Work Summary for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner mx-auto mb-4"></div><p class="text-gray-600">Loading summary...</p></div>';
+        timelineModal.classList.remove("hidden");
+        google.script.run.withSuccessHandler(renderEngWorkedTable).getEngineerWorkSummary(projectName);
+      }
+
+      function renderEngWorkedTable(data) {
+        if (data.error) {
+          timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+          return;
+        }
+        if (!data || data.length === 0) {
+          timelineModalContent.innerHTML = '<p class="text-gray-600">No engineers have logged hours for this project yet.</p>';
+          return;
+        }
+
+        let tableHtml = `
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="headerCss">
+                <tr>
+                  <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Engineer Name</th>
+                  <th class="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Total Worked (Hrs)</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-100">`;
+
+        data.forEach((item) => {
+          tableHtml += `
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">${item.name}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-700">${item.hours}</td>
+              </tr>`;
+        });
+
+        tableHtml += "</tbody></table></div>";
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      // Additional modal functions remain exactly the same, just with improved table HTML styling
+
+      /**
+       * REPLACED: Draws the project timeline as a GROUPED BAR CHART.
+       * It shows two bars side-by-side for each milestone: Planned Date and Actual Date.
+       */
+      function drawD3Chart(data) {
+        const chartDiv = document.getElementById('chart_div');
+        chartDiv.innerHTML = '';
+        if (!data || data.length === 0) {
+          chartDiv.innerHTML = '<h3>No chart data available.</h3>';
+          return;
+        }
+
+        const margin = {top: 40, right: 40, bottom: 150, left: 90};
+        const width = chartDiv.clientWidth > 800 ? chartDiv.clientWidth - margin.left - margin.right : 800;
+        const height = 500 - margin.top - margin.bottom;
+
+        const svg = d3.select("#chart_div").append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+        
+        const tooltip = d3.select(".tooltip");
+
+        const parseDate = d3.timeParse("%d/%m/%Y");
+        const formatDate = d3.timeFormat("%d-%m-%Y");
+
+        data.forEach(d => {
+            d.plannedDate = parseDate(d.planned);
+            d.actualDate = d.actual ? parseDate(d.actual) : null;
+        });
+
+        // --- DEFINE SCALES FOR GROUPED BARS ---
+        const subgroups = ['plannedDate', 'actualDate'];
+        const groups = data.map(d => d.milestone);
+
+        const x = d3.scaleBand()
+            .domain(groups)
+            .range([0, width])
+            .padding([0.2]);
+        
+        const yDomain = d3.extent(data.flatMap(d => [d.plannedDate, d.actualDate]).filter(d => d));
+        const y = d3.scaleTime()
+            .domain(yDomain)
+            .range([height, 0])
+            .nice();
+        
+        // A new scale for positioning the bars within each group
+        const xSubgroup = d3.scaleBand()
+            .domain(subgroups)
+            .range([0, x.bandwidth()])
+            .padding([0.05]);
+
+        const color = d3.scaleOrdinal()
+            .domain(subgroups)
+            .range(['#3366cc', '#28a745']); // Blue for Planned, Green for Actual
+
+        // --- DRAW AXES AND GRID LINES ---
+        svg.append("g").attr("class", "grid-line").call(d3.axisLeft(y).ticks(5).tickSize(-width).tickFormat(""));
+        svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x)).selectAll("text").style("text-anchor", "end").attr("dx", "-.8em").attr("dy", ".15em").attr("transform", "rotate(-65)");
+        svg.append("g").call(d3.axisLeft(y).ticks(5).tickFormat(d3.timeFormat("%d-%m-%Y")));
+
+        // --- DRAW THE GROUPED BARS ---
+        svg.append("g")
+          .selectAll("g")
+          .data(data)
+          .join("g")
+            .attr("transform", d => `translate(${x(d.milestone)}, 0)`)
+          .selectAll("rect")
+          .data(function(d) { return subgroups.map(key => ({key: key, value: d[key], allData: d})); })
+          .join("rect")
+            .attr("x", d => xSubgroup(d.key))
+            .attr("y", d => d.value ? y(d.value) : y(0))
+            .attr("width", xSubgroup.bandwidth())
+            .attr("height", d => d.value ? height - y(d.value) : 0)
+            .attr("fill", d => color(d.key))
+            .on("mouseover", (event, d) => {
+              tooltip.style("opacity", 1);
+            })
+            .on("mousemove", (event, d) => {
+              const plannedDateStr = d.allData.plannedDate ? formatDate(d.allData.plannedDate) : "N/A";
+              const actualDateStr = d.allData.actualDate ? formatDate(d.allData.actualDate) : "N/A";
+              tooltip.html(`<strong>Milestone:</strong> ${d.allData.milestone}<br>
+                            <strong style="color: #3366cc;">Planned:</strong> ${plannedDateStr}<br>
+                            <strong style="color: #28a745;">Actual:</strong> ${actualDateStr}`)
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 28) + "px");
+            })
+            .on("mouseout", () => {
+              tooltip.style("opacity", 0);
+            });
+
+          // --- LEGEND For Graph ---
+          const legendData = [
+              { label: "Planned Date", color: "#3366cc" },
+              { label: "Actual Date", color: "#28a745" }
+          ];
+
+          const legend = svg.append("g")
+              .attr("font-family", "sans-serif")
+              .attr("font-size", 10)
+              .attr("text-anchor", "start")
+              .selectAll("g")
+              .data(legendData)
+              .join("g")
+              .attr("transform", (d, i) => `translate(${i * 110}, -30)`); // Position legend items at the top
+
+          legend.append("rect")
+              .attr("x", 0)
+              .attr("width", 19)
+              .attr("height", 19)
+              .attr("fill", d => d.color);
+
+          legend.append("text")
+              .attr("x", 24)
+              .attr("y", 9.5)
+              .attr("dy", "0.32em")
+              .text(d => d.label);
+      }
+
+      function updateKpiDashboard(kpis) {
+        if (!kpis || kpis.error) {
+          console.error(kpis.error || "Failed to load KPI data.");
+          return;
+        }
+
+        const formatNum = (num) => num.toLocaleString("en-IN");
+
+        document.getElementById("kpi-expenses").textContent = formatNum(kpis.expensesRs || 0);
+        document.getElementById("kpi-manpower-rs").textContent = formatNum(kpis.manpowerUsedRs || 0);
+        document.getElementById("kpi-product-rs").textContent = formatNum(kpis.productUsedRs || 0);
+        document.getElementById("kpi-indent-planned").textContent = formatNum(kpis.indentPlanned || 0);
+        document.getElementById("kpi-actual-indent").textContent = formatNum(kpis.actualIndent || 0);
+        document.getElementById("kpi-received").textContent = formatNum(kpis.received || 0);
+        document.getElementById("kpi-used").textContent = formatNum(kpis.used || 0);
+        document.getElementById("kpi-eng-worked").textContent = formatNum(kpis.engWorked || 0);
+        document.getElementById("kpi-planned-hrs").textContent = formatNum(kpis.plannedManHrs || 0);
+        document.getElementById("kpi-actual-hrs").textContent = formatNum(kpis.actualManHrs || 0);
+        document.getElementById("kpi-audit-manpower").textContent = formatNum(kpis.auditManpower || 0);
+        document.getElementById("kpi-audit-product").textContent = formatNum(kpis.auditProduct || 0);
+        document.getElementById("kpi-audit-drawings").textContent = formatNum(kpis.auditDrawings || 0);
+        document.getElementById("kpi-total-tasks").textContent = formatNum(kpis.totalTasks || 0);
+        document.getElementById("kpi-tasks-done").textContent = formatNum(kpis.tasksDone || 0);
+        document.getElementById("kpi-tasks-inprogress").textContent = formatNum(kpis.tasksInProgress || 0);
+        document.getElementById("kpi-tasks-hold").textContent = formatNum(kpis.tasksOnHold || 0);
+        document.getElementById("kpi-total-milestones").textContent = formatNum(kpis.totalMilestones || 0);
+        document.getElementById("kpi-completed-milestones").textContent = formatNum(kpis.completedMilestones || 0);
+        document.getElementById("kpi-pending-milestones").textContent = formatNum(kpis.pendingMilestones || 0);
+        document.getElementById("kpi-milestone-percent").textContent = (kpis.milestoneDonePercent || 0) + "%";
+
+        const totalBillingMilestones = kpis.totalBillingMilestones || 0;
+        const completedBillingMilestones = kpis.completedBillingMilestones || 0;
+        document.getElementById("kpi-billing-milestones").textContent = `${completedBillingMilestones} / ${totalBillingMilestones}`;
+        document.getElementById("kpi-billing-done").textContent = `${kpis.overallBillingDonePercent || 0}%`;
+        document.getElementById("kpi-billing-pending").textContent = `${kpis.overallBillingPendingPercent || 0}%`;
+
+        document.getElementById("kpi-order-amount").innerHTML = `${formatNum(parseFloat(kpis.orderAmount || 0).toFixed(2))} + GST`;
+        
+        const profitLossEl = document.getElementById("kpi-profit-loss");
+        const profitLossValue = kpis.profitLoss || 0;
+        profitLossEl.textContent = formatNum(profitLossValue.toFixed(2));
+        if (profitLossValue > 0) {
+          profitLossEl.style.color = "#10b981";
+        } else if (profitLossValue < 0) {
+          profitLossEl.style.color = "#ef4444";
+        } else {
+          profitLossEl.style.color = "#334155";
+        }
+
+        document.getElementById("kpi-proj-manager").textContent = kpis.projectManager;
+        document.getElementById('kpi-site-incharge').textContent = kpis.siteIncharge || 'N/A';
+        const poLink = document.getElementById("kpi-po-copy");
+        poLink.href = kpis.poCopy;
+        poLink.textContent = kpis.poCopy ? "View Document" : "N/A";
+
+        document.getElementById("pay-advance").textContent = `${kpis.paymentTerms.advance}%`;
+        document.getElementById("pay-pi").textContent = `${kpis.paymentTerms.againstPi}%`;
+        document.getElementById("pay-install").textContent = `${kpis.paymentTerms.installTest}%`;
+        document.getElementById("pay-commission").textContent = `${kpis.paymentTerms.commission}%`;
+        document.getElementById("pay-security").textContent = `${kpis.paymentTerms.security}%`;
+
+        const paymentPercent = (kpis.paymentReceivedPercent || 0) * 100;
+        drawDonutChart("payment-chart", paymentPercent, "#10b981", "#fbbf24");
+
+        const paymentContainer = document.getElementById("payment-chart-container");
+        if (paymentContainer && !paymentContainer.hasAttribute("data-listener-added")) {
+          paymentContainer.addEventListener("click", openFinanceModal);
+          paymentContainer.setAttribute("data-listener-added", "true");
+        }
+      }
+
+      function drawDonutChart(elementId, percentage, colorActive, colorInactive) {
+        // --- CLEAR CONTAINER (Removes spinner) ---
+        const container = document.getElementById(elementId);
+        if (container) container.innerHTML = ''; 
+        // -----------------------------------------
+        
+        const width = 120, height = 120, margin = 10;
+        const radius = Math.min(width, height) / 2 - margin;
+        
+        const svg = d3.select("#" + elementId)
+          .append("svg")
+            .attr("width", width)
+            .attr("height", height)
+          .append("g")
+            .attr("transform", `translate(${width/2},${height/2})`);
+            
+        const data = [percentage, 100 - percentage];
+        const color = d3.scaleOrdinal().range([colorActive, colorInactive]);
+        
+        const pie = d3.pie().sort(null);
+        const arc = d3.arc().innerRadius(radius - 12).outerRadius(radius);
+        
+        svg.selectAll('path')
+          .data(pie(data))
+          .enter()
+          .append('path')
+          .attr('d', arc)
+          .attr('fill', (d, i) => color(i));
+          
+        svg.append("text")
+          .attr("text-anchor", "middle")
+          .attr("dy", ".3em")
+          .style("font-size", "20px")
+          .style("font-weight", "bold")
+          .text(`${percentage.toFixed(1)}%`);
+      }
+
+      /**
+       * REPLACED: Draws the Milestone Progress vs. Billing Status as a GROUPED BAR CHART.
+       */
+      function drawMilestoneComboChart(data) {
+        const chartDiv = document.getElementById('task_status_chart_div');
+        chartDiv.innerHTML = '';
+        if (!data || data.length === 0) {
+          chartDiv.innerHTML = '<h3>No data available to display for this chart.</h3>';
+          return;
+        }
+
+        const margin = {top: 40, right: 40, bottom: 150, left: 90};
+        const width = (chartDiv.clientWidth || 800) - margin.left - margin.right;
+        const height = 500 - margin.top - margin.bottom;
+
+        const svg = d3.select("#task_status_chart_div").append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+        
+        const tooltip = d3.select(".tooltip");
+
+        // --- DEFINE SCALES FOR GROUPED BARS ---
+        const subgroups = ['taskProgress', 'billingStatus'];
+        const groups = data.map(d => d.milestone);
+
+        const x = d3.scaleBand()
+            .domain(groups)
+            .range([0, width])
+            .padding([0.2]);
+
+        const y = d3.scaleLinear()
+            .domain([0, 100])
+            .range([height, 0]);
+
+        // A new scale for positioning the bars within each group
+        const xSubgroup = d3.scaleBand()
+            .domain(subgroups)
+            .range([0, x.bandwidth()])
+            .padding([0.05]);
+
+        const color = d3.scaleOrdinal()
+            .domain(subgroups)
+            .range(['#964B00', '#FFC300']); // Brown for Task Progress, Yellow for Billing Status
+
+        // --- DRAW AXES AND GRID ---
+        svg.append("g").attr("class", "grid-line").call(d3.axisLeft(y).ticks(5).tickSize(-width).tickFormat(""));
+        svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x)).selectAll("text").style("text-anchor", "end").attr("dx", "-.8em").attr("dy", ".15em").attr("transform", "rotate(-65)");
+        svg.append("g").call(d3.axisLeft(y).ticks(5).tickFormat(d => d + "%"));
+
+        // --- DRAW THE GROUPED BARS ---
+        svg.append("g")
+          .selectAll("g")
+          .data(data)
+          .join("g")
+            .attr("transform", d => `translate(${x(d.milestone)}, 0)`)
+          .selectAll("rect")
+          .data(function(d) { return subgroups.map(key => ({key: key, value: d[key], allData: d})); })
+          .join("rect")
+            .attr("x", d => xSubgroup(d.key))
+            .attr("y", d => y(d.value))
+            .attr("width", xSubgroup.bandwidth())
+            .attr("height", d => height - y(d.value))
+            .attr("fill", d => color(d.key))
+            .on("mouseover", (event, d) => tooltip.style("opacity", 1))
+            .on("mousemove", (event, d) => {
+              tooltip.html(`<strong>Milestone:</strong> ${d.allData.milestone}<br>
+                            <strong style="color: #964B00;">Task Progress:</strong> ${d.allData.taskProgress.toFixed(0)}%<br>
+                            <strong style="color: #FFC300;">Billing Status:</strong> ${d.allData.billingStatus.toFixed(0)}%`)
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 28) + "px");
+            })
+            .on("mouseout", () => tooltip.style("opacity", 0));
+
+
+            // --- LEGEND For Graph ---
+            const legendData = [
+                { label: "Task Progress", color: "#964B00" },
+                { label: "Billing Status", color: "#FFC300" }
+            ];
+
+            const legend = svg.append("g")
+                .attr("font-family", "sans-serif")
+                .attr("font-size", 10)
+                .attr("text-anchor", "start")
+                .selectAll("g")
+                .data(legendData)
+                .join("g")
+                .attr("transform", (d, i) => `translate(${i * 120}, -30)`); // Position legend items
+
+            legend.append("rect")
+                .attr("x", 0)
+                .attr("width", 19)
+                .attr("height", 19)
+                .attr("fill", d => d.color);
+
+            legend.append("text")
+                .attr("x", 24)
+                .attr("y", 9.5)
+                .attr("dy", "0.32em")
+                .text(d => d.label);
+      }
+
+      // --- NEW: FUNCTIONS TO OPEN MODAL FOR INVENTORY MODAL ---
+
+      /**
+       * Opens modal for inventory, now calls the summary view renderer.
+       */
+      function openInventoryModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Inventory & Product Status for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderInventorySummaryView).getInventoryData(projectName);
+      }
+
+      // --- NEW: FUNCTIONS TO OPEN MODAL FOR MANPOWER COST DATA ---
+
+      /**
+       * Opens the modal and fetches data from the 'Manpower Cost' sheet.
+       */
+      function openManpowerCostModal() {
+        const projectName = getSafeProjectName();
+        if (!projectName) {
+            alert("Please select a project first.");
+            return;
+        }
+        timelineModalTitle.textContent = `Manpower Cost Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        // Call the server-side function for Manpower Cost data
+        google.script.run.withSuccessHandler(renderManpowerCostTable).getManpowerCostData(projectName);
+      }
+
+      // --- NEW: FUNCTIONS TO OPEN MODAL FOR FINANCE DATA ---
+
+      /**
+       * Opens the modal and fetches data from the 'FINANCE/ACCOUNTS' sheet.
+       */
+      function openFinanceModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Payment Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderFinanceSummaryView).getFinanceData(projectName);
+      }
+
+       /**
+       * Opens modal for 'Billing' summary.
+       */
+      function openBillingModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Billing Status for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderBillingSummaryView).getBillingData(projectName);
+      }
+
+      // --- NEW: FUNCTIONS TO OPEN MODAL FOR PROJECT DETAILS FORM DATA ---
+      /**
+       * REPLACED: Opens the modal and renders the FULL project details in a key-value format.
+       */
+      function openProjectDetailsModal() {
+        const projectName = getSafeProjectName();
+        if (!projectName) {
+            alert("Please select a project first.");
+            return;
+        }
+        
+        timelineModalTitle.textContent = `Full Project Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2"></div></div>';
+        timelineModal.classList.remove('hidden');
+
+        // This is the success handler, defined right inside the call
+        const renderDetailsView = function(data) {
+            if (data.error) {
+                timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">${data.error}</p>`;
+                return;
+            }
+            if (!data.row) {
+                timelineModalContent.innerHTML = '<p class="text-gray-600">No data found for this project.</p>';
+                return;
+            }
+
+            const { headers, row } = data;
+            const linkHeaders = ['SITE PICS', 'INFO-SHEET', 'PROJECT DRAWING', 'CUSTOMER PO COPY', 'CLIENT SITE VISITS/MOM'];
+
+            let detailHtml = '<dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">';
+            
+            headers.forEach((header, i) => {
+                // Skip blank headers to keep the UI clean
+                if (!header) return;
+
+                let cellData = row[i] || 'N/A';
+                
+                if (linkHeaders.includes(header) && cellData.startsWith('http')) {
+                    cellData = `<a onclick="window.open('${cellData}', '_blank')" class="text-blue-600 hover:underline" style="cursor: pointer;">View Link</a>`;
+                }
+
+                detailHtml += `
+                  <div class="p-2 bg-gray-50 rounded">
+                    <dt class="text-xs font-medium">${header}</dt>
+                    <dd class="text-sm text-gray-900">${cellData}</dd>
+                  </div>`;
+            });
+
+            detailHtml += `</dl>`;
+            timelineModalContent.innerHTML = detailHtml;
+        };
+
+        google.script.run.withSuccessHandler(renderDetailsView).getProjectDetailsFormData(projectName);
+      }
+
+      // --- NEW: FUNCTIONS TO OPEN MODAL FOR AUDIT DATA ---
+
+      /**
+       * Opens modal for 'Auditor Sheet Manpower' data.
+       */
+      function openAuditManpowerModal() {
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Manpower Audit Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderAuditManpowerTable).getAuditManpowerData(projectName);
+      }
+
+      /**
+       * Opens modal for 'Auditor Sheet Item' data.
+       */
+      function openAuditItemModal() {
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Product/Item Audit Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderAuditItemTable).getAuditItemData(projectName);
+      }
+
+      /**
+       * Opens modal for 'Auditor Sheet Drawing' data.
+       */
+      function openAuditDrawingModal() {
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Drawing Audit Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderAuditDrawingTable).getAuditDrawingData(projectName);
+      }
+
+      /**
+       * REPLACED: Opens the MOM modal INSTANTLY using pre-fetched data.
+       */
+      function openMomModal() {
+        const projectName = document.getElementById('project-name').value;
+        // Basic validation
+        if (!projectName || projectName === 'Loading projects...') {
+             return; 
+        }
+        
+        timelineModalTitle.textContent = `Minutes of Meeting for: ${projectName}`;
+        timelineModalContent.innerHTML = ''; // Clear previous content
+        timelineModal.classList.remove('hidden');
+
+        // DIRECTLY CALL THE RENDERER with the global variable
+        renderMomView(momData);
+      }
+
+      /**
+       * Opens the modal and fetches the detailed WBS data for Milestone Summary.
+       */
+      function openMilestoneDetailsModal() {
+        const projectName = document.getElementById('project-name').value;
+        if (!projectName || projectName === 'Loading projects...') return;
+        
+        timelineModalTitle.textContent = `Detailed WBS Status for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="spinner border-t-blue-600"></div><p>Loading WBS details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        // Reuse the WBS data fetching function we created at the start
+        google.script.run.withSuccessHandler(renderTimelineTable).getWbsDataForProject(projectName);
+      }
+
+      // --- NEW: FUNCTIONS FOR PRODUCT USED DETAILS MODAL ---
+
+      /**
+       * Opens the modal for 'INVENTORY' consumption data.
+       */
+      function openProductUsedModal(event) {
+        event.stopPropagation(); // Prevent other clicks from firing
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        
+        timelineModalTitle.textContent = `Product Usage Cost Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        google.script.run.withSuccessHandler(renderProductUsedTable).getProductUsedData(projectName);
+      }
+
+      /**
+       * Opens the modal and fetches data from the 'Expenses' sheet.
+       */
+      function openExpenseDetailsModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        
+        timelineModalTitle.textContent = `Expense Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        google.script.run.withSuccessHandler(renderExpenseView).getExpenseDetailsData(projectName);
+      }
+
+      /**
+       * Opens the modal for Planned Man-Hours details.
+       */
+      function openPlannedHrsModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        
+        timelineModalTitle.textContent = `Planned Man-Hours Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        google.script.run.withSuccessHandler(renderPlannedHrsTable).getPlannedHrsData(projectName);
+      }
+
+      /**
+       * Opens the modal for Actual Man-Hours details.
+       */
+      function openActualHrsModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        
+        timelineModalTitle.textContent = `Actual Man-Hours Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        google.script.run.withSuccessHandler(renderActualHrsTable).getActualHrsData(projectName);
+      }
+
+      // --- NEW: FUNCTIONS FOR FILTERED MILESTONE LISTS ---
+
+      /**
+       * Opens the modal to show a list of completed milestones.
+       */
+      function openCompletedMilestonesModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        
+        timelineModalTitle.textContent = `Completed Milestones for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        google.script.run.withSuccessHandler(renderMilestoneList).getFilteredMilestones(projectName, 'COMPLETED');
+      }
+
+      /**
+       * Opens the modal to show a list of pending milestones.
+       */
+      function openPendingMilestonesModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        
+        timelineModalTitle.textContent = `Pending Milestones for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 inline-block"></div><p>Loading details...</p></div>';
+        timelineModal.classList.remove('hidden');
+
+        google.script.run.withSuccessHandler(renderMilestoneList).getFilteredMilestones(projectName, 'PENDING');
+      }
+
+      // --- NEW: FUNCTIONS FOR FILTERED INVENTORY VIEWS ---
+
+      function openPlannedIndentModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Planned Indent Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'Planned Indent Qty']))
+            .getFilteredInventoryData(projectName, 'Planned Indent Qty');
+      }
+
+      function openActualIndentModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Actual Indent Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'INDENT1']))
+            .getFilteredInventoryData(projectName, 'INDENT1');
+      }
+
+      function openReceivedModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Received Items Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'REC.1']))
+            .getFilteredInventoryData(projectName, 'REC.1');
+      }
+
+      function openUsedModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Used/Consumed Items Details for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div><p>Loading...</p></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(data => renderFilteredInventoryTable(data, ['MILESTONE', 'PRODUCT NAME', 'CONSU.1']))
+            .getFilteredInventoryData(projectName, 'CONSU.1');
+      }
+
+      /**
+       * NEW: Renders the summary view of the inventory with a "View" button.
+       */
+      function renderInventorySummaryView(data) {
+        inventoryData = data; // Store full data globally
+
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No inventory data found for this project.</p>';
+            return;
+        }
+
+        const { headers, rows } = data;
+        const summaryHeaders = ['MILESTONE', 'PRODUCT NAME', 'INDENT1', 'REC.1', 'CONSU.1', 'PO NO'];
+        
+        const headerIndexMap = summaryHeaders.map(h => ({ name: h, index: headers.indexOf(h) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        summaryHeaders.forEach(header => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${header}</th>`);
+        tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">Action</th>`;
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        
+        rows.forEach((row, index) => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                let cellData = (h.index !== -1) ? row[h.index] : 'N/A';
+                let isLink = false;
+                
+                if (h.name === 'PO NO' && cellData.startsWith('http')) {
+                    cellData = `<a onclick="window.open('${cellData}', '_blank')" class="text-blue-600 hover:underline" style="cursor: pointer;">View</a>`;
+                    isLink = true;
+                }
+
+                if (isLink) {
+                    tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+                } else {
+                    tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 truncate-cell" title="${cellData}">${cellData}</td>`;
+                }
+            });
+            tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm">
+                          <button class="view-inventory-details-btn bg-gray-700 text-white py-1 px-3 rounded-md text-xs hover:bg-gray-800" data-row-index="${index}">View</button>
+                         </td>`;
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * NEW: Renders the full detail view for a single selected inventory item.
+       */
+      function showInventoryDetails(rowIndex) {
+        const { headers, rows } = inventoryData;
+        const itemData = rows[rowIndex];
+        const linkHeaders = ['PO NO']; // Add any other linkable headers here
+
+        let detailHtml = `
+          <div class="mb-4">
+            <button id="back-to-inventory-summary-btn" class="bg-gray-500 text-white py-1 px-4 rounded-md hover:bg-gray-600">← Back to Summary</button>
+          </div>
+          <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">`;
+        
+        headers.forEach((header, i) => {
+            let cellData = itemData[i] || 'N/A';
+            if (linkHeaders.includes(header) && cellData.startsWith('http')) {
+                cellData = `<a onclick="window.open('${cellData}', '_blank')" class="text-blue-600 hover:underline" style="cursor: pointer;">View Link</a>`;
+            }
+            detailHtml += `
+              <div class="p-2 bg-gray-50 rounded">
+                <dt class="text-xs font-medium text-gray-500">${header}</dt>
+                <dd class="text-sm text-gray-900">${cellData}</dd>
+              </div>`;
+        });
+
+        detailHtml += `</dl>`;
+        timelineModalContent.innerHTML = detailHtml;
+      }
+
+      /**
+       * Renders the data from 'Manpower Cost' into an HTML table inside the modal.
+       */
+      function renderManpowerCostTable(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No Manpower Cost data found for this project.</p>';
+            return;
+        }
+
+        const { headers, rows } = data;
+        const requiredHeaders = ['ISO No.', 'Milestone', 'Manpower Cost'];
+
+        const headerIndexMap = requiredHeaders.map(reqHeader => {
+            const index = headers.findIndex(h => h.trim().toUpperCase() === reqHeader.trim().toUpperCase());
+            return { name: reqHeader, index: index };
+        });
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200">';
+        
+        tableHtml += '<thead class="headerCss"><tr>';
+        headerIndexMap.forEach(h => {
+            tableHtml += `<th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">${h.name}</th>`;
+        });
+        tableHtml += '</tr></thead>';
+
+        tableHtml += '<tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                const cellData = (h.index !== -1 && row[h.index] !== undefined) ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Renders the summary view for 'FINANCE/ACCOUNTS'.
+       */
+      function renderFinanceSummaryView(data) {
+        financeData = data; // Store globally
+        if (data.error || !data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = `<p class="text-red-500">${data.error || 'No payment data found for this project.'}</p>`;
+            return;
+        }
+        
+        const summaryHeaders = ['BILL DATED', 'BILL NO', 'Payment Recieved', 'BAL. PYMT AS PER ORDER', '% of  Pymt recd'];
+        const headerIndexMap = summaryHeaders.map(h => ({ name: h, index: data.headers.indexOf(h) }));
+        
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        summaryHeaders.forEach(header => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium  uppercase">${header}</th>`);
+        tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">Action</th>`;
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        
+        data.rows.forEach((row, index) => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                const cellData = (h.index !== -1) ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm">
+                          <button class="view-finance-details-btn bg-gray-700 text-white py-1 px-3 rounded-md text-xs hover:bg-gray-800" data-row-index="${index}">View</button>
+                         </td>`;
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Shows full details for one finance entry.
+       */
+      function showFinanceDetails(rowIndex) {
+        const { headers, rows } = financeData;
+        const entryData = rows[rowIndex];
+
+        let detailHtml = `
+          <div class="mb-4">
+            <button id="back-to-finance-summary-btn" class="bg-gray-500 text-white py-1 px-4 rounded-md hover:bg-gray-600">← Back to Summary</button>
+          </div>
+          <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">`;
+        
+        headers.forEach((header, i) => {
+            const cellData = entryData[i] || 'N/A';
+            detailHtml += `
+              <div class="p-2 bg-gray-50 rounded">
+                <dt class="text-xs font-medium text-gray-500">${header}</dt>
+                <dd class="text-sm text-gray-900">${cellData}</dd>
+              </div>`;
+        });
+
+        detailHtml += `</dl>`;
+        timelineModalContent.innerHTML = detailHtml;
+      }
+
+       // --- NEW: FUNCTIONS FOR FILTERED BILLING VIEWS ---
+      function openBillingDoneModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Completed Billings for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderBillingSummaryView).getFilteredBillingData(projectName, 'DONE');
+      }
+
+       function openBillingPendingModal(event) {
+        event.stopPropagation();
+        const projectName = getSafeProjectName();
+        if (!projectName) return alert("Please select a project first.");
+        timelineModalTitle.textContent = `Pending Billings for: ${projectName}`;
+        timelineModalContent.innerHTML = '<div class="text-center p-8"><div class="animate-spin h-8 w-8 border-b-2"></div></div>';
+        timelineModal.classList.remove('hidden');
+        google.script.run.withSuccessHandler(renderBillingSummaryView).getFilteredBillingData(projectName, 'PENDING');
+      }
+
+      /**
+       * Renders the summary view for 'Billing' (reused for filtered views).
+       */
+      function renderBillingSummaryView(data) {
+        billingData = data; // Store globally for detail view
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold p-4">${data.error}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600 p-4">No billing data found for this category.</p>';
+            return;
+        }
+        
+        const summaryHeaders = ['Milestones', 'Product', 'Billing Stage', 'Billing Value', 'Sales Person', 'Status5'];
+        const headerIndexMap = summaryHeaders.map(h => ({ name: h, index: data.headers.indexOf(h) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        summaryHeaders.forEach(header => {
+            const displayName = header === 'Status5' ? 'Status' : header;
+            tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${displayName}</th>`
+        });
+        tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">Action</th>`;
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        
+        data.rows.forEach((row, index) => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                const cellData = (h.index !== -1) ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm">
+                          <button class="view-billing-details-btn bg-gray-700 text-white py-1 px-3 rounded-md text-xs hover:bg-gray-800" data-row-index="${index}">View</button>
+                         </td>`;
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Shows full details for one billing entry.
+       */
+      function showBillingDetails(rowIndex) {
+        const { headers, rows } = billingData;
+        const entryData = rows[rowIndex];
+        const linkHeaders = ['Supp Doc'];
+
+        let detailHtml = `
+          <div class="mb-4">
+            <button id="back-to-billing-summary-btn" class="bg-gray-500 text-white py-1 px-4 rounded-md hover:bg-gray-600">← Back to Summary</button>
+          </div>
+          <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">`;
+        
+        headers.forEach((header, i) => {
+            let cellData = entryData[i] || 'N/A';
+            if (linkHeaders.includes(header) && cellData.startsWith('http')) {
+                cellData = `<a onclick="window.open('${cellData}', '_blank')" class="text-blue-600 hover:underline" style="cursor: pointer;">View Document</a>`;
+            }
+            detailHtml += `
+              <div class="p-2 bg-gray-50 rounded">
+                <dt class="text-xs font-medium">${header}</dt>
+                <dd class="text-sm text-gray-900">${cellData}</dd>
+              </div>`;
+        });
+
+        detailHtml += `</dl>`;
+        timelineModalContent.innerHTML = detailHtml;
+      }
+
+      /**
+       * Renders the table for Manpower Audit data.
+       */
+      function renderAuditManpowerTable(data) {
+        if (data.error) return timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+        if (!data.rows || data.rows.length === 0) return timelineModalContent.innerHTML = '<p class="text-gray-600">No Manpower Audit data found.</p>';
+
+        const { headers, rows } = data;
+        const requiredHeaders = ['ISO No.','Milestone', 'Image/Reference', 'As per (Planning Sheet)', 'Actual', 'Deviation','End Date', 'Remark'];
+        // const requiredHeaders = ['ISO No.', 'Project Name', 'End Date', 'Milestone', 'Task', 'Image/Reference', 'As per (Planning Sheet)', 'Actual', 'Deviation', 'Remark'];
+        const headerIndexMap = requiredHeaders.map(hName => ({ name: hName, index: headers.indexOf(hName) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        headerIndexMap.forEach(h => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${h.name}</th>`);
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                let cellData = h.index !== -1 ? row[h.index] : 'N/A';
+                 if (h.name === 'Image/Reference' && cellData.startsWith('http')) {
+                    cellData = `<a href="${cellData}" target="_blank" class="text-blue-600 hover:underline">View</a>`;
+                }
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Renders the table for Item Audit data.
+       */
+      function renderAuditItemTable(data) {
+        if (data.error) return timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+        if (!data.rows || data.rows.length === 0) return timelineModalContent.innerHTML = '<p class="text-gray-600">No Product Audit data found.</p>';
+
+        const { headers, rows } = data;
+        const requiredHeaders = ['ISO No.','Item/ Product', 'Received Qty', 'Item Consumed', 'Deviation','End Date', 'Remark'];
+        // const requiredHeaders = ['ISO No 2', 'ISO No._company', 'End Date', 'Milestone', 'Task', 'Item/ Product', 'Received Qty', 'Item As per Tender', 'Item Consumed', 'Deviation', 'Remark'];
+        const headerIndexMap = requiredHeaders.map(hName => ({ name: hName, index: headers.indexOf(hName) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        headerIndexMap.forEach(h => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${h.name}</th>`);
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                let cellData = h.index !== -1 ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Renders the table for Drawing Audit data.
+       */
+      function renderAuditDrawingTable(data) {
+        if (data.error) return timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+        if (!data.rows || data.rows.length === 0) return timelineModalContent.innerHTML = '<p class="text-gray-600">No Drawing Audit data found.</p>';
+
+        const { headers, rows } = data;
+        const requiredHeaders = ['ISO No.', 'MILESTONE', 'DRAWING NO. AUTOMATIC', 'DOER NAME- Manual slection from Drop Down', 'Drawing Attachment', 'Deviation', 'Final Drawing','END DATE', 'Remark'];
+        const linkHeaders = ['Drawing Attachment', 'Final Drawing'];
+        const headerIndexMap = requiredHeaders.map(hName => ({ name: hName, index: headers.indexOf(hName) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        headerIndexMap.forEach(h => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${h.name}</th>`);
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                let cellData = h.index !== -1 ? row[h.index] : 'N/A';
+                 if (linkHeaders.includes(h.name) && cellData.startsWith('http')) {
+                    cellData = `<a href="${cellData}" target="_blank" class="text-blue-600 hover:underline">LINK</a>`;
+                }
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      // --- REPLACED: FUNCTIONS FOR MOM SUMMARY/DETAIL VIEW ---
+      /**
+       * REPLACED: Renders the complete MOM view, now conditionally showing filters.
+       */
+      function renderMomView(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+
+        // --- THIS IS THE KEY CHANGE ---
+        // NEW: Check if there is any data BEFORE building the filters.
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600 p-4">No <b>Minutes of Meeting</b> records found.</p>';
+            return; // Stop here if there's no data.
+        }
+
+        // If we get here, it means there IS data, so we can proceed.
+        momData = data; 
+        
+        const dateIndex = momData.headers.indexOf('Meeting Date');
+        const agendaIndex = momData.headers.indexOf('Agenda');
+
+        if (dateIndex === -1 || agendaIndex === -1) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: 'Meeting Date' or 'Agenda' column not found.</p>`;
+            return;
+        }
+        
+        const uniqueDates = [...new Set(momData.rows.map(row => row[dateIndex]).filter(String))].sort();
+        const uniqueAgendas = [...new Set(momData.rows.map(row => row[agendaIndex]).filter(String))].sort();
+
+        // Build the HTML for the filters (this code now only runs if data exists)
+        let filtersHtml = `
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-lg border">
+            <div>
+              <label for="mom-date-filter" class="block text-sm font-medium text-gray-700">Filter by Meeting Date</label>
+              <select id="mom-date-filter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md">
+                <option value="">All Dates</option>
+                ${uniqueDates.map(date => `<option value="${date}">${date}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label for="mom-agenda-filter" class="block text-sm font-medium text-gray-700">Filter by Agenda</label>
+              <select id="mom-agenda-filter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 rounded-md">
+                <option value="">All Agendas</option>
+                ${uniqueAgendas.map(agenda => `<option value="${agenda}">${agenda}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div id="mom-table-container"></div>`;
+        
+        timelineModalContent.innerHTML = filtersHtml;
+
+        // Add event listeners and render the initial table
+        document.getElementById('mom-date-filter').addEventListener('change', applyMomFilters);
+        document.getElementById('mom-agenda-filter').addEventListener('change', applyMomFilters);
+        
+        applyMomFilters(); 
+      }
+
+      /**
+       * REPLACED: Applies filters and redraws the MOM summary table.
+       */
+      function applyMomFilters() {
+        const dateFilterValue = document.getElementById('mom-date-filter').value;
+        const agendaFilterValue = document.getElementById('mom-agenda-filter').value;
+        const tableContainer = document.getElementById('mom-table-container');
+
+        const dateIndex = momData.headers.indexOf('Meeting Date');
+        const agendaIndex = momData.headers.indexOf('Agenda');
+
+        let filteredRowsWithIndex = momData.rows
+            .map((row, index) => ({ row, originalIndex: index }))
+            .filter(item => {
+                const dateMatch = !dateFilterValue || item.row[dateIndex] === dateFilterValue;
+                const agendaMatch = !agendaFilterValue || item.row[agendaIndex] === agendaFilterValue;
+                return dateMatch && agendaMatch;
+            });
+
+        if (filteredRowsWithIndex.length === 0) {
+            tableContainer.innerHTML = '<p class="text-center text-gray-600 py-4">No <b>MOM</b> Records Found.</p>';
+            return;
+        }
+        
+        const summaryHeaders = ['Meeting Date', 'Agenda', 'Action Item', 'Responsible Person', 'Deadline', 'PDF Link'];
+        const headerIndexMap = summaryHeaders.map(h => ({ name: h, index: momData.headers.indexOf(h) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        summaryHeaders.forEach(header => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium  uppercase">${header}</th>`);
+        tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium  uppercase">Action</th>`;
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        
+        filteredRowsWithIndex.forEach(item => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                let cellData = (h.index !== -1) ? item.row[h.index] : 'N/A';
+                let isLink = false; // Flag to track if the cell is a link
+                
+                if (h.name === 'PDF Link' && cellData.startsWith('http')) {
+                    cellData = `<a onclick="window.open('${cellData}', '_blank')" class="text-blue-600 hover:underline" style="cursor: pointer;">View PDF</a>`;
+                    isLink = true;
+                }
+                
+                // --- THIS IS THE CORRECTED LOGIC ---
+                // Only add the 'title' attribute if the cell is NOT a link.
+                if (isLink) {
+                    tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+                } else {
+                    tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 truncate-cell" title="${cellData}">${cellData}</td>`;
+                }
+            });
+            tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm">
+                          <button class="view-mom-details-btn bg-gray-700 text-white py-1 px-3 rounded-md text-xs hover:bg-gray-800" data-row-index="${item.originalIndex}">View</button>
+                         </td>`;
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        tableContainer.innerHTML = tableHtml;
+      }
+
+      /**
+       * NEW: Renders the full detail view for a single selected MOM entry.
+       */
+      function showMomDetails(rowIndex) {
+        const { headers, rows } = momData;
+        const entryData = rows[rowIndex];
+        const linkHeaders = ['Upload Image 1', 'Upload Image 2', 'Upload Image 3', 'Upload Image 4', 'Upload Image 5', 'PDF Link', 'Client Signature (Client Attendee 1)','Mentor Signature (Mentor Attendee 1)'];
+
+        let detailHtml = `
+          <div class="mb-4">
+            <button id="back-to-mom-summary-btn" class="bg-gray-500 text-white py-1 px-4 rounded-md hover:bg-gray-600">← Back to Summary</button>
+          </div>
+          <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">`;
+        
+        headers.forEach((header, i) => {
+            let cellData = entryData[i] || 'N/A';
+            if (linkHeaders.includes(header) && cellData.startsWith('http')) {
+                cellData = `<a href="${cellData}" target="_blank" class="text-blue-600 hover:underline">View Link</a>`;
+            }
+            detailHtml += `
+              <div class="p-2 bg-gray-50 rounded">
+                <dt class="text-xs font-medium ">${header}</dt>
+                <dd class="text-sm text-gray-900">${cellData}</dd>
+              </div>`;
+        });
+
+        detailHtml += `</dl>`;
+        timelineModalContent.innerHTML = detailHtml;
+      }
+
+      /**
+       * Renders the detailed milestone status table (with combined pending) inside the modal.
+       */
+      function renderMilestoneDetailsTable(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data || data.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No milestone data found for this project.</p>';
+            return;
+        }
+
+        let tableHtml = `
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr class="text-center"> 
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Milestone</th> 
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Total Tasks</th> 
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Done</th>
+                  <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase">Pending</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">`;
+
+        data.forEach(item => {
+            tableHtml += `
+              <tr class="text-center">
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 text-left">${item.milestone}</td>
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${item.total}</td>
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${item.done}</td>
+                <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${item.pending}</td>
+              </tr>`;
+        });
+
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Renders a focused table of consumed products and their costs.
+       */
+      function renderProductUsedTable(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No product consumption costs have been recorded for this project.</p>';
+            return;
+        }
+
+        const { headers, rows } = data;
+        // A focused list of headers for this specific view
+        const requiredHeaders = [
+            'MILESTONE',
+            'TASK',
+            'PRODUCT NAME',
+            'CONSU.1', // Qty Consumed
+            'CONSU.2'  // Cost Consumed
+        ];
+        
+        // Rename headers for the display table to be more user-friendly
+        const displayHeaders = {
+            'CONSU.1': 'Qty Used',
+            'CONSU.2': 'Cost (Rs.)'
+        };
+
+        const headerIndexMap = requiredHeaders.map(reqHeader => {
+            const index = headers.findIndex(h => h.trim().toUpperCase() === reqHeader.trim().toUpperCase());
+            return { name: reqHeader, index: index, displayName: displayHeaders[reqHeader] || reqHeader };
+        });
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        headerIndexMap.forEach(h => {
+            tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium  uppercase">${h.displayName}</th>`;
+        });
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                const cellData = (h.index !== -1 && row[h.index] !== undefined) ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * UPDATED: Renders the Expense table with new headers (Date, Particulars, Debit Amount).
+       */
+      function renderExpenseView(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+
+        expenseData = data; // Store data globally
+        
+        // Define the columns you want to see in the summary table
+        const summaryHeaders = ['Date', 'Particulars', 'Vch No', 'Debit Amount'];
+        const headerIndexMap = summaryHeaders.map(h => ({ name: h, index: expenseData.headers.indexOf(h) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        summaryHeaders.forEach(header => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${header}</th>`);
+        tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">Action</th>`;
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        
+        let totalAmount = 0;
+        
+        // Loop through rows
+        expenseData.rows.forEach((row, index) => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                let cellData = (h.index !== -1) ? row[h.index] : 'N/A';
+
+                // Special formatting for Debit Amount
+                if (h.name === 'Debit Amount') {
+                    // Clean commas and parse to float for totaling
+                    const amount = parseFloat(String(cellData).replace(/,/g, '')) || 0;
+                    totalAmount += amount;
+                    cellData = amount.toLocaleString('en-IN');
+                }
+                
+                // Truncate long text in Particulars
+                if (h.name === 'Particulars') {
+                     tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 truncate-cell" title="${cellData}">${cellData}</td>`;
+                } else {
+                     tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+                }
+            });
+            
+            // View Details Button
+            tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm">
+                          <button class="view-expense-details-btn bg-gray-700 text-white py-1 px-3 rounded-md text-xs hover:bg-gray-800" data-row-index="${index}">View</button>
+                         </td>`;
+            tableHtml += '</tr>';
+        });
+
+        // Add Footer with Total
+        tableHtml += `</tbody><tfoot class="bg-gray-100"><tr>
+                        <th colspan="${summaryHeaders.length}" class="px-4 py-3 text-right text-sm font-bold text-gray-800 uppercase">Total Debit Amount</th>
+                        <th class="px-4 py-3 text-left text-sm font-bold text-gray-800">${totalAmount.toLocaleString('en-IN')}</th>
+                      </tr></tfoot></table></div>`;
+
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Applies filters and redraws the Expense SUMMARY table.
+       */
+      function applyExpenseFilters() {
+        const divisionFilter = document.getElementById('expense-division-filter').value;
+        const modeFilter = document.getElementById('expense-mode-filter').value;
+        const tableContainer = document.getElementById('expense-table-container');
+
+        const divisionIndex = expenseData.headers.indexOf('Division');
+        const modeIndex = expenseData.headers.indexOf('Mode of Payment');
+
+        let filteredRowsWithIndex = expenseData.rows
+            .map((row, index) => ({ row, originalIndex: index }))
+            .filter(item => {
+                const divisionMatch = !divisionFilter || item.row[divisionIndex] === divisionFilter;
+                const modeMatch = !modeFilter || item.row[modeIndex] === modeFilter;
+                return divisionMatch && modeMatch;
+            });
+
+        if (filteredRowsWithIndex.length === 0) {
+            tableContainer.innerHTML = '<p class="text-center text-gray-600 py-4">No expenses match the selected filters.</p>';
+            return;
+        }
+
+        const summaryHeaders = ['Timestamp', 'Description of Goods/Services', 'Payable To (Name & Address)', 'Amount'];
+        const headerIndexMap = summaryHeaders.map(h => ({ name: h, index: expenseData.headers.indexOf(h) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="headerCss"><tr>';
+        summaryHeaders.forEach(header => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium  uppercase">${header}</th>`);
+        tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium  uppercase">Action</th>`;
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        
+        let totalAmount = 0;
+        filteredRowsWithIndex.forEach(item => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                let cellData = (h.index !== -1) ? item.row[h.index] : 'N/A';
+                if (h.name === 'Amount') {
+                    const amount = parseFloat(cellData) || 0;
+                    totalAmount += amount;
+                    cellData = amount.toLocaleString('en-IN');
+                }
+                // Apply truncation to the description column
+                if (h.name === 'Description of Goods/Services') {
+                    tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 truncate-cell" title="${cellData}">${cellData}</td>`;
+                } else {
+                    tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+                }
+            });
+            tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm">
+                          <button class="view-expense-details-btn bg-gray-700 text-white py-1 px-3 rounded-md text-xs hover:bg-gray-800" data-row-index="${item.originalIndex}">View</button>
+                         </td>`;
+            tableHtml += '</tr>';
+        });
+
+        tableHtml += `</tbody><tfoot class="bg-gray-100"><tr>
+                        <th colspan="${summaryHeaders.length}" class="px-4 py-3 text-right text-sm font-bold text-gray-800 uppercase">Total</th>
+                        <th class="px-4 py-3 text-left text-sm font-bold text-gray-800">${totalAmount.toLocaleString('en-IN')}</th>
+                      </tr></tfoot></table></div>`;
+
+        tableContainer.innerHTML = tableHtml;
+      }
+
+      /**
+       * NEW: Renders the full detail view for a single selected expense entry.
+       */
+      function showExpenseDetails(rowIndex) {
+        const { headers, rows } = expenseData;
+        const entryData = rows[rowIndex];
+        const linkHeaders = ['Supporting Document'];
+
+        let detailHtml = `
+          <div class="mb-4">
+            <button id="back-to-expense-summary-btn" class="bg-gray-500 text-white py-1 px-4 rounded-md hover:bg-gray-600">← Back to Summary</button>
+          </div>
+          <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3">`;
+        
+        headers.forEach((header, i) => {
+            let cellData = entryData[i] || 'N/A';
+            if (linkHeaders.includes(header) && cellData.startsWith('http')) {
+                cellData = `<a onclick="window.open('${cellData}', '_blank')" class="text-blue-600 hover:underline" style="cursor: pointer;">View Document</a>`;
+            }
+            detailHtml += `
+              <div class="p-2 bg-gray-50 rounded">
+                <dt class="text-xs font-medium ">${header}</dt>
+                <dd class="text-sm text-gray-900">${cellData}</dd>
+              </div>`;
+        });
+
+        detailHtml += `</dl>`;
+        timelineModalContent.innerHTML = detailHtml;
+      }
+
+      // --- NEW: FUNCTIONS FOR PLANNED & ACTUAL HOURS MODALS ---
+
+      /**
+       * Renders a focused table of tasks with planned hours.
+       */
+      function renderPlannedHrsTable(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No tasks with planned hours found for this project.</p>';
+            return;
+        }
+
+        const { headers, rows } = data;
+        const requiredHeaders = ['Milestone', 'Required Hours', 'Task'];
+
+        const headerIndexMap = requiredHeaders.map(reqHeader => ({ name: reqHeader, index: headers.indexOf(reqHeader) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr>';
+        headerIndexMap.forEach(h => {
+            tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${h.name}</th>`;
+        });
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                const cellData = (h.index !== -1) ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      /**
+       * Renders a focused table of tasks with actual logged hours.
+       */
+      function renderActualHrsTable(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No tasks with actual logged hours found for this project.</p>';
+            return;
+        }
+
+        const { headers, rows } = data;
+        const requiredHeaders = ['Milestone', 'Engineer Name (Doer)', 'Worked (Hrs)', 'Task'];
+
+        const headerIndexMap = requiredHeaders.map(reqHeader => ({ name: reqHeader, index: headers.indexOf(reqHeader) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr>';
+        headerIndexMap.forEach(h => {
+            tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${h.name}</th>`;
+        });
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                const cellData = (h.index !== -1) ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+      
+      /**
+       * Reusable function to render a simple list of milestone names in the modal.
+       */
+      function renderMilestoneList(data) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data || data.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No milestones match this status.</p>';
+            return;
+        }
+
+        let listHtml = '<ul class="list-disc list-inside space-y-2 p-4">';
+        data.forEach(name => {
+            listHtml += `<li class="text-gray-800 text-base">${name}</li>`;
+        });
+        listHtml += '</ul>';
+
+        timelineModalContent.innerHTML = listHtml;
+      }
+      
+      /**
+       * Reusable function to render a focused table for inventory data.
+       */
+      function renderFilteredInventoryTable(data, columnsToShow) {
+        if (data.error) {
+            timelineModalContent.innerHTML = `<p class="text-red-500 font-semibold">Error: ${data.error}</p>`;
+            return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+            timelineModalContent.innerHTML = '<p class="text-gray-600">No relevant items found for this category.</p>';
+            return;
+        }
+
+        const { headers, rows } = data;
+        const headerIndexMap = columnsToShow.map(colName => ({ name: colName, index: headers.indexOf(colName) }));
+
+        let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr>';
+        headerIndexMap.forEach(h => {
+            tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${h.name}</th>`;
+        });
+        tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+        rows.forEach(row => {
+            tableHtml += '<tr>';
+            headerIndexMap.forEach(h => {
+                const cellData = (h.index !== -1) ? row[h.index] : 'N/A';
+                tableHtml += `<td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${cellData}</td>`;
+            });
+            tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table></div>';
+        timelineModalContent.innerHTML = tableHtml;
+      }
+
+      // --- NEW FUNCTIONS FOR TASK PROGRESS MODAL ---
+      function openTaskProgressModal(event) {
+          event.stopPropagation();
+          timelineModalTitle.textContent = `Task Progress Details for: ${document.getElementById('project-name').value}`;
+          timelineModal.classList.remove('hidden');
+          renderTaskProgressSummaryView(taskProgressChartData); // Directly render using globally stored data
+      }
+
+      function renderTaskProgressSummaryView(data) {
+          if (!data || data.length === 0) {
+              timelineModalContent.innerHTML = '<p class="text-gray-600">No task progress data to display.</p>';
+              return;
+          }
+
+          const summaryHeaders = ['Task', 'Planned Date', 'Status %'];
+          let tableHtml = '<div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr>';
+          summaryHeaders.forEach(header => tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">${header}</th>`);
+          tableHtml += `<th class="px-4 py-3 text-left text-xs font-medium uppercase">Action</th>`;
+          tableHtml += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+
+          data.forEach((item, index) => {
+              tableHtml += `<tr>
+                              <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700 truncate-cell" title="${item.milestone}">${item.milestone}</td>
+                              <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${item.actual}</td>
+                              <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-700">${item.planned}%</td>
+                              <td class="px-4 py-4 whitespace-nowrap text-sm">
+                                  <button class="view-task-progress-details-btn bg-gray-700 text-white py-1 px-3 rounded-md text-xs hover:bg-gray-800" data-row-index="${index}">View</button>
+                              </td>
+                            </tr>`;
+          });
+          tableHtml += '</tbody></table></div>';
+          timelineModalContent.innerHTML = tableHtml;
+      }
+
+      function showTaskProgressDetails(rowIndex) {
+          // This function can simply reuse the existing showTaskDetails from the 'PROJECT PLANNING' data
+          // because the data structure is the same. We just need to make sure projectPlanningData is loaded.
+          // A robust way is to check if it exists, if not, fetch it.
+          if (projectPlanningData.rows && projectPlanningData.rows.length > 0) {
+              const taskName = taskProgressChartData[rowIndex].milestone;
+              // Find the corresponding full task data in the globally stored projectPlanningData
+              const fullTaskDataIndex = projectPlanningData.rows.findIndex(row => row[projectPlanningData.headers.indexOf('Task')] === taskName);
+              if (fullTaskDataIndex !== -1) {
+                  showTaskDetails(fullTaskDataIndex); // Reuse the existing detail viewer!
+                  // Modify the back button to point to the correct summary view
+                  document.getElementById('back-to-summary-btn').id = 'back-to-task-progress-summary-btn';
+              } else {
+                  timelineModalContent.innerHTML = '<p class="text-red-500">Could not find full details for this task.</p>';
+              }
+          } else {
+              timelineModalContent.innerHTML = '<p class="text-yellow-500">Loading full task details...</p>';
+              // Fallback: If projectPlanningData isn't loaded for some reason, we can fetch it.
+              google.script.run.withSuccessHandler(data => {
+                  projectPlanningData = data;
+                  showTaskProgressDetails(rowIndex); // Try again
+              }).getProjectPlanningData(document.getElementById('project-name').value);
+          }
+      }
+
+      // --- NEW: FUNCTION TO RENDER THE BILLING FMS TABLE ---
+
+      /**
+       * Renders the Billing FMS summary table.
+       */
+      function renderBillingFmsTable(data) {
+        const tbody = document.getElementById('billing-fms-body');
+        tbody.innerHTML = ''; // Clear previous content
+
+        if (data.error) {
+          tbody.innerHTML = `<tr><td colspan="3" class="text-center text-red-500 p-4">${data.error}</td></tr>`;
+          return;
+        }
+        if (!data || data.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="3" class="text-center p-4">No billing milestones found for this project.</td></tr>`;
+          return;
+        }
+
+        let tableRowsHtml = '';
+        data.forEach(item => {
+          tableRowsHtml += `
+            <tr class="text-center">
+              <td style="text-align: left;">${item.milestone}</td>
+              <td>${item.donePercent}%</td>
+              <td>${item.pendingPercent}%</td>
+            </tr>`;
+        });
+
+        tbody.innerHTML = tableRowsHtml;
+      }
+
+      /**
+       * Hides sensitive elements for Customer users.
+       */
+      function applyCustomerRestrictions() {
+        // 1. Hide Go Home Button
+        const exitBtn = document.getElementById('dashboardExitBtn');
+        if (exitBtn) exitBtn.style.display = 'none';
+
+        // 2. Hide Sensitive Cards and Info
+        const idsToHide = [
+            'card-expenses',      // Till Date Updated
+            'card-product',       // Product Status
+            'card-manpower',      // Manpower Used
+            'info-profit-loss',    // Profit/Loss Row
+            'card-task-status'    // NEW: Hide Task Status for Customer as well
+        ];
+
+        idsToHide.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+      }
+
+      /**
+       * Sets all KPI data cells to a loading state (spinner).
+       */
+      function setKpiLoadingState() {
+        // A small Tailwind spinner
+        const spinner = '<div class="inline-block w-4 h-4 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin"></div>';
+        
+        // List of all IDs that display data
+        const ids = [
+            // Till Date Updated
+            'kpi-expenses', 'kpi-manpower-rs', 'kpi-product-rs',
+            // Product Status
+            'kpi-indent-planned', 'kpi-actual-indent', 'kpi-received', 'kpi-used',
+            // Manpower
+            'kpi-eng-worked', 'kpi-planned-hrs', 'kpi-actual-hrs',
+            // Audit
+            'kpi-audit-manpower', 'kpi-audit-product', 'kpi-audit-drawings',
+            // Milestone Summary
+            'kpi-total-milestones', 'kpi-completed-milestones', 'kpi-pending-milestones', 'kpi-milestone-percent', 
+            // Task Status
+            'kpi-total-tasks', 'kpi-tasks-done', 'kpi-tasks-inprogress', 'kpi-tasks-hold',
+            // Billing FMS
+            'kpi-billing-milestones', 'kpi-billing-done', 'kpi-billing-pending',
+            // Project Info
+            'kpi-order-amount', 'kpi-profit-loss', 'kpi-proj-manager', 'kpi-site-incharge',
+            // Payment Terms
+            'pay-advance', 'pay-pi', 'pay-install', 'pay-commission', 'pay-security'
+        ];
+
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = spinner;
+        });
+      }
+  </script>
+
+</body>
+</html>
