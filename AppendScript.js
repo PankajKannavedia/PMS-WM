@@ -45,7 +45,8 @@ const DESTINATIONS = [
 const KEY_COLUMN = {
   "project boq": "A",
   "project planning": "H",
-  "inventory": "W"
+  "inventory": "W",
+  "auditor sheet item": "A"
 };
 
 const CONFIG = {
